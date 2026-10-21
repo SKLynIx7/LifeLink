@@ -1,0 +1,9 @@
+build/
+build-*/
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.db
+.vs/
+_backup_before_fixes/
