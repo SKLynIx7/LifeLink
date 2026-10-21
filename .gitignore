@@ -7,3 +7,4 @@ build-*/
 *.db
 .vs/
 _backup_before_fixes/
+.vscode/
