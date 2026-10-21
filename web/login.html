@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-brand">
+      <h1><b>♥</b> Life<span>Link</span></h1>
+      <p>Find a compatible blood donor nearby, or help someone who needs your blood group.</p>
+    </section>
+
+    <section class="card auth-card">
+      <h2>Log in</h2>
+      <p id="login-message" class="message" hidden></p>
+      <form id="login-form" class="stack" novalidate>
+        <label>Email
+          <input id="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Log in</button>
+      </form>
+      <p class="form-links">
+        <a href="/forgot.html">Forgot password?</a>
+        <span>New here? <a href="/register.html">Create an account</a></span>
+      </p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/auth.js"></script>
+  <script>LifeLinkAuth.initLogin();</script>
+</body>
+</html>

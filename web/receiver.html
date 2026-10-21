@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Receiver dashboard - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1><small>Receive blood</small></a>
+    <nav id="user-slot"></nav>
+  </header>
+
+  <main>
+    <section class="card request-card">
+      <div class="card-title">
+        <div><p class="label">NEW REQUEST</p><h2>Request blood</h2></div>
+      </div>
+      <p id="request-message" class="message" hidden></p>
+      <form id="request-form">
+        <label class="full">Hospital
+          <select id="hospital" required></select>
+        </label>
+        <label>Required blood group
+          <select id="blood-group" required></select>
+        </label>
+        <label>Units needed
+          <select id="units"></select>
+        </label>
+        <button type="submit">Find compatible donors →</button>
+      </form>
+    </section>
+
+    <section class="card results-card">
+      <div class="card-title">
+        <div><p class="label">YOUR REQUESTS</p><h2>Requests and donors</h2></div>
+        <span class="badge neutral" title="This page refreshes on its own">Live</span>
+      </div>
+      <p id="list-message" class="message" hidden></p>
+      <div id="request-list"><p class="muted">Loading…</p></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/receiver.js"></script>
+</body>
+</html>

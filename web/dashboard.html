@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1></a>
+    <nav id="user-slot"></nav>
+  </header>
+
+  <main>
+    <h2 class="greeting" id="greeting">Welcome</h2>
+    <p class="muted greeting-sub">What would you like to do?</p>
+
+    <section class="choices">
+      <a class="choice-card receive" href="/receiver.html">
+        <span class="choice-icon" aria-hidden="true">+</span>
+        <span class="choice-text">
+          <strong>Receive</strong>
+          <span>Request blood for a patient and find compatible donors nearby.</span>
+          <em id="receive-status"></em>
+        </span>
+        <span class="choice-arrow" aria-hidden="true">→</span>
+      </a>
+      <a class="choice-card donate" href="/donor.html">
+        <span class="choice-icon" aria-hidden="true">♥</span>
+        <span class="choice-text">
+          <strong>Donate</strong>
+          <span>See requests from people near you who need your blood group.</span>
+          <em id="donate-status"></em>
+        </span>
+        <span class="choice-arrow" aria-hidden="true">→</span>
+      </a>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

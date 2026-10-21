@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reset password - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-brand">
+      <h1><b>♥</b> Life<span>Link</span></h1>
+      <p>Answer your security question to choose a new password.</p>
+    </section>
+
+    <section class="card auth-card">
+      <h2>Reset your password</h2>
+      <p id="forgot-message" class="message" hidden></p>
+
+      <form id="email-step" class="stack" novalidate>
+        <label>Email
+          <input id="email" type="email" autocomplete="email" required>
+        </label>
+        <button type="submit">Continue</button>
+      </form>
+
+      <form id="answer-step" class="stack" novalidate hidden>
+        <p class="question-box"><span class="hint">Your security question</span><strong id="question-text"></strong></p>
+        <label>Answer
+          <input id="security-answer" type="text" maxlength="100" required>
+        </label>
+        <div class="two-col">
+          <label>New password
+            <input id="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+          </label>
+          <label>Confirm new password
+            <input id="confirm-password" type="password" autocomplete="new-password" required>
+          </label>
+        </div>
+        <button type="submit">Reset password</button>
+        <button type="button" id="change-email" class="link-button">Use a different email</button>
+      </form>
+
+      <p class="form-links"><a href="/login.html">Back to log in</a></p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/auth.js"></script>
+  <script>LifeLinkAuth.initForgot();</script>
+</body>
+</html>

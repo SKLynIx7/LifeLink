@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profile - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1><small>Your profile</small></a>
+    <nav id="user-slot"></nav>
+  </header>
+
+  <main class="narrow-main">
+    <section class="card request-card">
+      <div class="card-title">
+        <div><p class="label">PROFILE</p><h2>Your details</h2></div>
+      </div>
+      <p id="profile-message" class="message" hidden></p>
+      <form id="profile-form" class="stack" novalidate>
+        <label>Full name
+          <input id="name" type="text" autocomplete="name" maxlength="100" required>
+        </label>
+        <label>Email
+          <input id="email" type="email" disabled>
+        </label>
+        <p class="hint">Your email is how you log in, so it cannot be changed here.</p>
+        <div class="two-col">
+          <label>Blood group
+            <select id="blood-type" required></select>
+          </label>
+          <label>Area in Dehradun
+            <select id="area" required></select>
+          </label>
+        </div>
+        <button type="button" id="use-location" class="secondary small-button">Use my current location instead</button>
+        <p id="location-note" class="hint"></p>
+        <label id="phone-field" hidden>Mobile number
+          <input id="phone" type="tel" inputmode="numeric" maxlength="10">
+        </label>
+        <button type="submit">Save changes</button>
+      </form>
+    </section>
+
+    <section class="card results-card">
+      <div class="card-title">
+        <div><p class="label">SECURITY</p><h2>Change password</h2></div>
+      </div>
+      <p id="password-message" class="message" hidden></p>
+      <form id="password-form" class="stack" novalidate>
+        <label>Current password
+          <input id="current-password" type="password" autocomplete="current-password" required>
+        </label>
+        <div class="two-col">
+          <label>New password
+            <input id="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+          </label>
+          <label>Confirm new password
+            <input id="confirm-password" type="password" autocomplete="new-password" required>
+          </label>
+        </div>
+        <p class="hint">At least 8 characters. You will be logged out on other devices.</p>
+        <button type="submit">Change password</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/profile.js"></script>
+</body>
+</html>

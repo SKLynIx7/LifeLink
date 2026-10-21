@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Donate - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1><small>Donate blood</small></a>
+    <nav id="user-slot"></nav>
+  </header>
+
+  <main>
+    <!-- Shown once, the first time a user opens Donate. -->
+    <section id="setup" class="card request-card" hidden>
+      <div class="card-title">
+        <div><p class="label">BECOME A DONOR</p><h2>Your donor details</h2></div>
+      </div>
+      <p class="muted setup-intro">Your phone number is shared only with a person whose request you accept, so they can reach you.</p>
+      <p id="setup-message" class="message" hidden></p>
+      <p id="setup-account" class="question-box"></p>
+      <form id="setup-form" class="stack" novalidate>
+        <label>Mobile number
+          <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="10 digits">
+        </label>
+        <label>Last donation date (leave empty if never)
+          <input id="last-donation" type="date">
+        </label>
+        <button type="submit">Save and continue</button>
+      </form>
+    </section>
+
+    <!-- Requests for this donor. -->
+    <section id="requests" class="card results-card" hidden>
+      <div class="card-title">
+        <div><p class="label">DONATE</p><h2>Requests for you</h2></div>
+        <span class="badge neutral" title="This page refreshes on its own">Live</span>
+      </div>
+      <p id="invite-message" class="message" hidden></p>
+      <div id="invitation-list"><p class="muted">Loading…</p></div>
+    </section>
+  </main>
+
+  <div id="questionnaire" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="questionnaire-title">
+      <p class="label">BEFORE YOU ACCEPT</p>
+      <h2 id="questionnaire-title">Can you donate today?</h2>
+      <p class="hint" id="questionnaire-note"></p>
+      <p id="questionnaire-message" class="message" hidden></p>
+      <ul id="ineligible-reasons" class="reasons" hidden></ul>
+      <form id="questionnaire-form" class="stack" novalidate>
+        <ol id="question-list" class="questions"></ol>
+        <div class="action-row">
+          <button type="submit">Confirm and accept</button>
+          <button type="button" id="close-questionnaire" class="secondary">Back</button>
+          <button type="button" id="decline-after-check" class="secondary" hidden>Decline this request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script src="/donor.js"></script>
+</body>
+</html>

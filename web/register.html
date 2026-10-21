@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-brand">
+      <h1><b>♥</b> Life<span>Link</span></h1>
+      <p>One account lets you request blood in Dehradun and, whenever you choose, donate.</p>
+    </section>
+
+    <section class="card auth-card">
+      <h2>Create an account</h2>
+      <p id="register-message" class="message" hidden></p>
+
+      <form id="register-form" class="stack" novalidate>
+        <label>Full name
+          <input id="name" type="text" autocomplete="name" maxlength="100" required>
+        </label>
+        <label>Email
+          <input id="email" type="email" autocomplete="email" maxlength="254" required>
+        </label>
+        <div class="two-col">
+          <label>Password
+            <input id="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+          </label>
+          <label>Confirm password
+            <input id="confirm-password" type="password" autocomplete="new-password" required>
+          </label>
+        </div>
+        <p class="hint">At least 8 characters.</p>
+
+        <div class="two-col">
+          <label>Blood group
+            <select id="blood-type" required></select>
+          </label>
+          <label>Area in Dehradun
+            <select id="area" required></select>
+          </label>
+        </div>
+        <button type="button" id="use-location" class="secondary small-button">Use my current location instead</button>
+        <p id="location-note" class="hint">Used to find compatible donors and hospitals near you. Others see only your distance.</p>
+
+        <label>Security question
+          <select id="security-question">
+            <option>What is the name of your first school?</option>
+            <option>What is your mother's birthplace?</option>
+            <option>What was the name of your first pet?</option>
+            <option>What is your favourite food?</option>
+          </select>
+        </label>
+        <label>Answer
+          <input id="security-answer" type="text" maxlength="100" required>
+        </label>
+        <p class="hint">Used to reset your password if you forget it. Capital letters and extra spaces are ignored.</p>
+
+        <button type="submit">Create account</button>
+      </form>
+      <p class="form-links"><span>Already registered? <a href="/login.html">Log in</a></span></p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/auth.js"></script>
+  <script>LifeLinkAuth.initRegister();</script>
+</body>
+</html>
