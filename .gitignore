@@ -1,8 +1,0 @@
-build/
-build-*/
-*.exe
-*.dll
-*.pdb
-*.ilk
-*.db
-.vs/
