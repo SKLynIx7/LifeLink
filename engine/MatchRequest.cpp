@@ -1,10 +1,12 @@
 #include "MatchRequest.h"
 #include "BloodType.h"
 
+#include <algorithm>
+
 double calculatePriorityScore(const Donor& donor) {
     const double proximityScore = 1.0 -
-        (donor.getDistanceKm() < NORMAL_SEARCH_RADIUS_KM
-            ? donor.getDistanceKm() / NORMAL_SEARCH_RADIUS_KM
+        (donor.getDistanceKm() < MAX_SEARCH_RADIUS_KM
+            ? donor.getDistanceKm() / MAX_SEARCH_RADIUS_KM
             : 1.0);
     const double normalizedReliability = donor.getReliabilityScore() / 5.0;
     const double reliabilityScore = normalizedReliability * normalizedReliability;
@@ -30,7 +32,7 @@ bool DonorPriority::operator()(const Donor& first, const Donor& second) const {
 MatchRequest::MatchRequest(int requestId, int hospitalId, const std::string& requiredBloodType,
                            double searchRadiusKm)
     : requestId(requestId), hospitalId(hospitalId), requiredBloodType(requiredBloodType),
-      searchRadiusKm(searchRadiusKm) {
+      searchRadiusKm(std::clamp(searchRadiusKm, 0.0, MAX_SEARCH_RADIUS_KM)) {
 }
 
 bool MatchRequest::addCandidate(const Donor& donor) {
