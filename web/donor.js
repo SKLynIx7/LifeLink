@@ -14,6 +14,8 @@
 
   const setupSection = document.getElementById("setup");
   const requestsSection = document.getElementById("requests");
+  const urgentSection = document.getElementById("urgent");
+  const urgentList = document.getElementById("urgent-list");
   const list = document.getElementById("invitation-list");
   const inviteMessage = document.getElementById("invite-message");
 
@@ -68,10 +70,12 @@
         h("strong", {}, `Blood group ${state.me.blood_type} · ${state.me.area}`));
       setupSection.hidden = false;
       requestsSection.hidden = true;
+      urgentSection.hidden = true;
       return;
     }
     setupSection.hidden = true;
     requestsSection.hidden = false;
+    urgentSection.hidden = false;
     if (!state.started) {
       loadQuestions();
     }
@@ -87,21 +91,51 @@
     if (state.answering || !state.me || !state.me.is_donor) {
       return;  // do not redraw while the donor is filling in the questionnaire
     }
-    const [me, invitations] = await Promise.all([api("GET", "/api/me"), api("GET", "/api/donor/invitations")]);
+    const [me, invitations, urgent] = await Promise.all(
+      [api("GET", "/api/me"), api("GET", "/api/donor/invitations"), api("GET", "/api/emergencies/nearby")]);
     if (me.ok) state.me = me.data;
+    if (urgent.ok) state.urgent = urgent.data;
     if (!invitations.ok) {
       showMessage(inviteMessage, invitations.data.error || "Could not load your requests.");
       return;
     }
     state.invitations = invitations.data.invitations;
-    const snapshot = JSON.stringify([state.me.donor_profile, state.invitations]);
+    const snapshot = JSON.stringify([state.me.donor_profile, state.invitations, state.urgent]);
     if (force || snapshot !== state.lastRendered) {
       state.lastRendered = snapshot;
       render();
     }
   }
 
+  // Urgent needs posted by hospitals (only blood groups this donor can give, within 25 km).
+  function renderUrgent() {
+    const data = state.urgent;
+    if (!data) {
+      urgentList.replaceChildren(h("p", { class: "muted" }, "Could not load urgent needs."));
+      return;
+    }
+    if (!data.posts.length) {
+      const why = !data.available ? "You are marked as not available, so urgent needs are not shown."
+        : data.can_donate_again_in_days > 0 ? `You can donate again in ${data.can_donate_again_in_days} days; urgent needs will show after that.`
+          : "No hospital near you needs your blood group urgently right now.";
+      urgentList.replaceChildren(h("p", { class: "urgent-empty" }, why));
+      return;
+    }
+    urgentList.replaceChildren(...data.posts.map((post) => h("article", { class: `urgent-post ${post.urgency}` },
+      h("div", { class: "urgent-head" },
+        h("span", { class: `urgency-badge ${post.urgency}` }, post.urgency === "critical" ? "Critical" : "Urgent"),
+        h("strong", {}, `${post.units} unit${post.units === 1 ? "" : "s"} of ${post.blood_type} needed`)),
+      h("p", { class: "urgent-hospital" }, `${post.hospital_name} · ${post.distance_km} km away`),
+      h("p", { class: "muted small-text" }, post.hospital_address),
+      post.note ? h("p", { class: "urgent-note" }, post.note) : null,
+      h("p", { class: "hint" }, `Posted ${LifeLink.timeAgo(post.created_at)} · open until ${formatTime(post.expires_at)}`),
+      h("div", { class: "urgent-actions" },
+        post.hospital_phone ? h("a", { class: "button", href: `tel:${post.hospital_phone.replace(/[^0-9+]/g, "")}` }, `Call ${post.hospital_phone}`) : null,
+        h("a", { class: "button secondary", href: post.map_url, target: "_blank", rel: "noopener noreferrer" }, "Directions ↗")))));
+  }
+
   function render() {
+    renderUrgent();
     const pending = state.invitations.filter((invitation) => invitation.status === "pending");
     const agreed = state.invitations.filter((invitation) =>
       invitation.status === "accepted" && ["open", "fulfilled"].includes(invitation.request_status));
