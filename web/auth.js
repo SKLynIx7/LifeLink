@@ -1,7 +1,7 @@
 // Login, registration and password-reset pages.
 
 const LifeLinkAuth = (() => {
-  const { api, showMessage, saveSession, getSession, DASHBOARD, BLOOD_GROUPS, AREAS, h } = LifeLink;
+  const { api, showMessage, saveSession, getSession, DASHBOARD, BLOOD_GROUPS, h } = LifeLink;
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -71,36 +71,17 @@ const LifeLinkAuth = (() => {
 
     const form = document.getElementById("register-form");
     const message = document.getElementById("register-message");
-    const areaSelect = document.getElementById("area");
-    const locationNote = document.getElementById("location-note");
-    let currentLocation = null;  // set by "Use my current location"
+    // Map picker, with the Dehradun area list as a fallback that needs no internet.
+    const locationField = LocationPicker.attachField({
+      preview: document.getElementById("location-preview"),
+      button: document.getElementById("choose-location"),
+      select: document.getElementById("area"),
+      note: document.getElementById("location-note")
+    });
 
     document.getElementById("blood-type").replaceChildren(
       h("option", { value: "" }, "Choose…"),
       ...BLOOD_GROUPS.map((group) => h("option", { value: group }, group)));
-    areaSelect.replaceChildren(
-      h("option", { value: "" }, "Choose your area…"),
-      ...AREAS.map((area, index) => h("option", { value: String(index) }, area.name)));
-
-    areaSelect.addEventListener("change", () => {
-      currentLocation = null;
-      locationNote.textContent = "Used to find compatible donors and hospitals near you. Others see only your distance.";
-    });
-    document.getElementById("use-location").addEventListener("click", () => {
-      if (!navigator.geolocation) {
-        locationNote.textContent = "Your browser cannot share its location. Please choose your area instead.";
-        return;
-      }
-      locationNote.textContent = "Getting your location…";
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          currentLocation = { name: "Current location", latitude: position.coords.latitude, longitude: position.coords.longitude };
-          areaSelect.value = "";
-          locationNote.textContent = "Using your current location.";
-        },
-        () => { locationNote.textContent = "Could not get your location. Please choose your area instead."; },
-        { timeout: 10000 });
-    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -121,14 +102,12 @@ const LifeLinkAuth = (() => {
       else if (!body.security_answer) problem = "Enter an answer to your security question.";
 
       const bloodType = document.getElementById("blood-type").value;
-      const location = currentLocation || (areaSelect.value !== "" ? AREAS[Number(areaSelect.value)] : null);
+      const location = locationField.value;
       if (!problem && !bloodType) problem = "Choose your blood group.";
-      else if (!problem && !location) problem = "Choose your area or use your current location.";
+      else if (!problem && !location) problem = "Choose your location on the map or pick your area.";
       if (!problem) {
         body.blood_type = bloodType;
-        body.area = location.name;
-        body.latitude = location.latitude;
-        body.longitude = location.longitude;
+        Object.assign(body, location);
       }
       if (problem) {
         showMessage(message, problem);
