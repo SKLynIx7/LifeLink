@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register a hospital - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/hospital-login.html"><h1><b>♥</b> Life<span>Link</span></h1><small>For hospitals</small></a>
+    <nav><a class="link-button" href="/hospital-login.html">Hospital login</a></nav>
+  </header>
+
+  <main class="narrow-main">
+    <section class="card request-card">
+      <div class="card-title">
+        <div><p class="label">HOSPITAL REGISTRATION</p><h2>Register your hospital</h2></div>
+      </div>
+      <p class="muted form-intro">Fields marked <span class="required-mark" aria-hidden="true">*</span> are required. You can change everything later from your dashboard.</p>
+      <p id="register-message" class="message" hidden></p>
+
+      <form id="hospital-register-form" class="stack hospital-form" novalidate>
+        <fieldset class="form-section">
+          <legend>Hospital and account</legend>
+          <label class="req">Hospital name
+            <input id="h-name" type="text" maxlength="120" autocomplete="organization" required>
+          </label>
+          <div class="two-col">
+            <label class="req">Official email
+              <input id="h-email" type="email" maxlength="254" autocomplete="email" required>
+            </label>
+            <label class="req">Phone number
+              <input id="h-phone" type="tel" maxlength="25" placeholder="0135-2654321" required>
+            </label>
+          </div>
+          <div class="two-col">
+            <label class="req">Password
+              <input id="h-password" type="password" autocomplete="new-password" maxlength="128" required>
+            </label>
+            <label class="req">Confirm password
+              <input id="h-confirm" type="password" autocomplete="new-password" required>
+            </label>
+          </div>
+          <p class="hint">At least 8 characters, with a letter and a number.</p>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend>Address and map location</legend>
+          <div class="location-field" role="group" aria-labelledby="location-label">
+            <span class="field-label req" id="location-label">Exact location on the map</span>
+            <div id="location-preview" class="location-preview"></div>
+            <div class="location-actions single">
+              <button type="button" id="choose-location" class="secondary">Choose on map</button>
+            </div>
+            <p id="location-note" class="hint">Search for the hospital, use your current location, or drag the map so the pin is on the building. The address below is filled in for you.</p>
+          </div>
+          <label class="req">Address
+            <input id="h-address" type="text" maxlength="300" autocomplete="street-address" required>
+          </label>
+          <div class="two-col">
+            <label class="req">City <input id="h-city" type="text" maxlength="100" required></label>
+            <label class="req">State <input id="h-state" type="text" maxlength="100" required></label>
+          </div>
+          <div class="two-col">
+            <label class="req">Country <input id="h-country" type="text" maxlength="100" value="India" required></label>
+            <label class="req">PIN code <input id="h-pincode" type="text" inputmode="numeric" maxlength="6" required></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend>Services and hours</legend>
+          <div id="service-fields" class="stack-fields"></div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend>More details <span class="muted">(optional)</span></legend>
+          <div id="optional-fields" class="stack-fields"></div>
+        </fieldset>
+
+        <button type="submit">Register hospital</button>
+      </form>
+      <p class="form-links"><span>Already registered? <a href="/hospital-login.html">Log in</a></span></p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/location-picker.js"></script>
+  <script src="/hospital.js"></script>
+  <script>LifeLinkHospital.initRegister();</script>
+</body>
+</html>
