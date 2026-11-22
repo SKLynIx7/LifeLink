@@ -9,7 +9,8 @@
 #include <queue>
 #include <string>
 
-constexpr double NORMAL_SEARCH_RADIUS_KM = 20.0;
+// Donors are searched for within this distance of the hospital at most.
+constexpr double MAX_SEARCH_RADIUS_KM = 25.0;
 constexpr double DISTANCE_WEIGHT = 0.65;
 constexpr double RELIABILITY_WEIGHT = 0.35;
 // Donors rated below this are still listed, but flagged as low reliability.
@@ -18,7 +19,9 @@ constexpr double LOW_RELIABILITY_THRESHOLD = 3.0;
 // The top donors in the ranking are marked "recommended" for the receiver.
 constexpr std::size_t RECOMMENDED_DONOR_COUNT = 3;
 
-// priorityScore = 0.65 x proximity + 0.35 x (rating / 5)^2, in the range 0..1.
+// priorityScore = 0.65 x proximity + 0.35 x (rating / 5)^2, in the range 0..1,
+// where proximity = 1 - distance / 25 km. The same scale is used for every search
+// radius, so a donor's score does not change when the receiver changes the radius.
 double calculatePriorityScore(const Donor& donor);
 bool isLowReliability(const Donor& donor);
 
@@ -34,8 +37,9 @@ struct DonorPriority {
 class MatchRequest {
 public:
     MatchRequest(int requestId, int hospitalId, const std::string& requiredBloodType,
-                 double searchRadiusKm = NORMAL_SEARCH_RADIUS_KM);
+                 double searchRadiusKm = MAX_SEARCH_RADIUS_KM);
 
+    // The radius is kept between 0 and MAX_SEARCH_RADIUS_KM, whatever is passed in.
     // Adds the donor only if eligible, blood-compatible and inside the search radius.
     bool addCandidate(const Donor& donor);
 
