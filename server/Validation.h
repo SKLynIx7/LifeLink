@@ -46,6 +46,43 @@ inline bool isValidPhone(const std::string& phone) {
     return std::regex_match(phone, pattern);
 }
 
+// Passwords for hospital accounts: 8 to 128 characters with at least one letter and one digit.
+inline bool isStrongPassword(const std::string& password) {
+    bool hasLetter = false;
+    bool hasDigit = false;
+    for (char character : password) {
+        hasLetter = hasLetter || std::isalpha(static_cast<unsigned char>(character));
+        hasDigit = hasDigit || std::isdigit(static_cast<unsigned char>(character));
+    }
+    return isValidPassword(password) && hasLetter && hasDigit;
+}
+
+// A hospital phone: a mobile or a landline with STD code, e.g. "9876543210",
+// "0135-2654321" or "+91 135 265 4321". 10 to 13 digits; spaces and dashes are allowed.
+inline bool isValidHospitalPhone(const std::string& phone) {
+    static const std::regex pattern(R"(^\+?[0-9][0-9 \-]{8,18}[0-9]$)");
+    if (!std::regex_match(phone, pattern)) {
+        return false;
+    }
+    int digits = 0;
+    for (char character : phone) {
+        digits += std::isdigit(static_cast<unsigned char>(character)) ? 1 : 0;
+    }
+    return digits >= 10 && digits <= 13;
+}
+
+// Indian PIN code: 6 digits, not starting with 0.
+inline bool isValidPincode(const std::string& pincode) {
+    static const std::regex pattern(R"(^[1-9][0-9]{5}$)");
+    return std::regex_match(pincode, pattern);
+}
+
+// An optional website must be a plain http(s) address.
+inline bool isValidWebsite(const std::string& url) {
+    static const std::regex pattern(R"(^https?://[A-Za-z0-9.\-]+(:[0-9]+)?(/[^\s]*)?$)");
+    return url.size() <= 200 && std::regex_match(url, pattern);
+}
+
 inline bool isValidLatitude(double value) {
     return std::isfinite(value) && value >= -90.0 && value <= 90.0;
 }
