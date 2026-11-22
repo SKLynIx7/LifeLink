@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hospital login - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-brand">
+      <h1><b>♥</b> Life<span>Link</span></h1>
+      <p>For hospitals and blood banks: keep your opening hours, blood groups and availability up to date for donors nearby.</p>
+    </section>
+
+    <section class="card auth-card">
+      <h2>Hospital login</h2>
+      <p id="login-message" class="message" hidden></p>
+      <form id="hospital-login-form" class="stack" novalidate>
+        <label>Official email
+          <input id="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Log in</button>
+      </form>
+      <p class="form-links">
+        <span>New hospital? <a href="/hospital-register.html">Register your hospital</a></span>
+        <a href="/login.html">Not a hospital? Personal login</a>
+      </p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/hospital.js"></script>
+  <script>LifeLinkHospital.initLogin();</script>
+</body>
+</html>
