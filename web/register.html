@@ -34,16 +34,19 @@
         </div>
         <p class="hint">At least 8 characters.</p>
 
-        <div class="two-col">
-          <label>Blood group
-            <select id="blood-type" required></select>
-          </label>
-          <label>Area in Dehradun
-            <select id="area" required></select>
-          </label>
+        <label>Blood group
+          <select id="blood-type" required></select>
+        </label>
+
+        <div class="location-field" role="group" aria-labelledby="location-label">
+          <span class="field-label" id="location-label">Your location</span>
+          <div id="location-preview" class="location-preview"></div>
+          <div class="location-actions">
+            <button type="button" id="choose-location" class="secondary">Choose on map</button>
+            <select id="area" aria-label="Or pick your area in Dehradun"></select>
+          </div>
+          <p id="location-note" class="hint">Used to measure your distance to hospitals. Others see only your distance, never your address.</p>
         </div>
-        <button type="button" id="use-location" class="secondary small-button">Use my current location instead</button>
-        <p id="location-note" class="hint">Used to find compatible donors and hospitals near you. Others see only your distance.</p>
 
         <label>Security question
           <select id="security-question">
@@ -65,6 +68,7 @@
   </main>
 
   <script src="/app.js"></script>
+  <script src="/location-picker.js"></script>
   <script src="/auth.js"></script>
   <script>LifeLinkAuth.initRegister();</script>
 </body>
