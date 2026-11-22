@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hospitals near you - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1><small>Hospitals</small></a>
+    <nav id="user-slot"></nav>
+  </header>
+
+  <main>
+    <section class="card request-card">
+      <div class="card-title">
+        <div><p class="label">NEAR YOU</p><h2>Hospitals and blood banks</h2></div>
+        <span class="badge neutral" title="Refreshes every 30 seconds">Live</span>
+      </div>
+      <p class="muted">Whether a hospital is open is checked with the server every 30 seconds. A hospital that closes within 30 minutes is shown as Closed.</p>
+      <div id="hospital-list"></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/hospital-list.js"></script>
+  <script>
+    (async () => {
+      const session = LifeLink.requireLogin();
+      if (!session) return;
+      LifeLink.setupHeader(session, { back: true });
+      const me = await LifeLink.api("GET", "/api/me");
+      const origin = me.ok && me.data.location
+        ? { latitude: me.data.location.latitude, longitude: me.data.location.longitude } : null;
+      HospitalList.create(document.getElementById("hospital-list"), { mode: "browse", origin, bloodGroupFilter: true });
+    })();
+  </script>
+</body>
+</html>
