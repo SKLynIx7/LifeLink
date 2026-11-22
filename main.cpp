@@ -1,5 +1,6 @@
 #include "crow.h"
 
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -7,7 +8,9 @@
 #include <string>
 
 #include "db/Database.h"
+#include "db/DemoData.h"
 #include "engine/MatchRequest.h"
+#include "engine/RadiusSearch.h"
 #include "server/Routes.h"
 
 namespace {
@@ -19,6 +22,9 @@ struct ServerConfig {
 
 void printUsage() {
     std::cout << "Usage: LifeLink [--port 8080] [--db lifelink.db] [--web-dir path/to/web]\n"
+              << "       LifeLink --seed-demo --db demo.db   (fill a NEW database with demo data, then exit)\n"
+              << "       LifeLink --create-admin <email> [--db lifelink.db]   (make an account an administrator)\n"
+              << "       LifeLink --remove-admin <email> [--db lifelink.db]\n"
               << "       LifeLink --engine-demo\n"
               << "       LifeLink --database-demo\n";
 }
@@ -52,7 +58,7 @@ void runEngineDemo() {
     request.addCandidate(Donor(2, "Rahul", "9876543211", "A+", 2.5, 140, 4.4));
     request.addCandidate(Donor(3, "Meera", "9876543212", "O+", 1.8, 45, 4.9));    // donated 45 days ago
     request.addCandidate(Donor(4, "Vikram", "9876543213", "B+", 3.1, 200, 4.7));  // incompatible
-    request.addCandidate(Donor(5, "Farhan", "9876543214", "A+", 35.0, 200, 5.0)); // outside 20 km
+    request.addCandidate(Donor(5, "Farhan", "9876543214", "A+", 35.0, 200, 5.0)); // outside 25 km
 
     std::cout << "Eligible candidates for A+: " << request.getEligibleCandidateCount() << '\n';
     std::cout << "Ranked list shown to the receiver:\n";
@@ -85,6 +91,18 @@ void runEngineDemo() {
         }
     }
     std::cout << " (" << inviteTop.getEligibleCandidateCount() << " left in the heap)\n";
+
+    // Auto-expand: nobody within 5 or 10 km, so the search widens to 15 km and stops there.
+    const RadiusSearchResult expanded = searchWithAutoExpand(104, 1, "O+", {
+        Donor(12, "Neha", "9876543221", "O-", 12.0, 150, 4.6),
+        Donor(13, "Arjun", "9876543222", "O+", 22.0, 150, 4.9),
+    });
+    std::cout << "Auto-expand for O+: tried";
+    for (double radiusKm : expanded.radiiTried) {
+        std::cout << ' ' << radiusKm << " km";
+    }
+    std::cout << " -> " << expanded.match.getEligibleCandidateCount() << " donor within "
+              << expanded.match.getSearchRadiusKm() << " km\n";
 }
 
 void runDatabaseDemo() {
@@ -97,16 +115,16 @@ void runDatabaseDemo() {
     // Demo accounts use placeholder hashes; they are never used to log in.
     const std::optional<int> receiverId = database.registerUser(
         "Kiran", "kiran@example.com", "demo-hash", "What is your birthplace?", "demo-hash",
-        "A+", "Rajpur Road", 30.3456, 78.0617);
+        "A+", UserLocation{"Rajpur Road", 30.3456, 78.0617});
     const std::optional<int> firstDonorId = database.registerUser(
         "Anjali", "anjali@example.com", "demo-hash", "What is your birthplace?", "demo-hash",
-        "O-", "Clock Tower", 30.3243, 78.0414);
+        "O-", UserLocation{"Clock Tower", 30.3243, 78.0414});
     const std::optional<int> secondDonorId = database.registerUser(
         "Rahul", "rahul@example.com", "demo-hash", "What is your birthplace?", "demo-hash",
-        "A+", "Dalanwala", 30.3170, 78.0560);
+        "A+", UserLocation{"Dalanwala", 30.3170, 78.0560});
     const std::optional<int> lowRatedDonorId = database.registerUser(
         "Sanjay", "sanjay@example.com", "demo-hash", "What is your birthplace?", "demo-hash",
-        "A+", "Ballupur", 30.3335, 78.0110);
+        "A+", UserLocation{"Ballupur", 30.3335, 78.0110});
 
     if (!receiverId || !firstDonorId || !secondDonorId || !lowRatedDonorId) {
         std::cout << "Demo account setup failed: " << database.getLastError() << '\n';
@@ -136,8 +154,33 @@ void runDatabaseDemo() {
 }
 }
 
+// --create-admin / --remove-admin: changes an existing account, then exits (the server does not start).
+int changeAdmin(const std::string& databasePath, const std::string& rawEmail, bool makeAdmin) {
+    std::string email = rawEmail;
+    for (char& character : email) {
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+    Database database(databasePath);
+    if (!database.open() || !database.initialize()) {
+        std::cerr << "Database setup failed: " << database.getLastError() << '\n';
+        return 1;
+    }
+    if (!database.setAdminByEmail(email, makeAdmin)) {
+        std::cerr << database.getLastError()
+                  << " Register that account on the website first, then run this command again.\n";
+        return 1;
+    }
+    std::cout << (makeAdmin ? "Done: " + email + " is now an administrator. Log in with it and open "
+                              "\"Approve hospitals\" from the menu under your name.\n"
+                            : "Done: " + email + " is no longer an administrator.\n");
+    return 0;
+}
+
 int main(int argumentCount, char* arguments[]) {
     ServerConfig config;
+    std::string adminEmail;
+    bool makeAdmin = true;
+    bool seedDemo = false;
 
     for (int index = 1; index < argumentCount; ++index) {
         const std::string argument = arguments[index];
@@ -154,6 +197,15 @@ int main(int argumentCount, char* arguments[]) {
         if (argument == "--help") {
             printUsage();
             return 0;
+        }
+        if (argument == "--seed-demo") {
+            seedDemo = true;
+            continue;
+        }
+        if ((argument == "--create-admin" || argument == "--remove-admin") && hasValue) {
+            makeAdmin = argument == "--create-admin";
+            adminEmail = arguments[++index];
+            continue;
         }
         if (argument == "--port" && hasValue) {
             try {
@@ -174,6 +226,24 @@ int main(int argumentCount, char* arguments[]) {
             printUsage();
             return 1;
         }
+    }
+
+    if (!adminEmail.empty()) {
+        return changeAdmin(config.databasePath, adminEmail, makeAdmin);
+    }
+    if (seedDemo) {
+        Database database(config.databasePath);
+        if (!database.open() || !database.initialize()) {
+            std::cerr << "Database setup failed: " << database.getLastError() << '\n';
+            return 1;
+        }
+        std::string report;
+        const bool seeded = seedDemoData(database, report);
+        (seeded ? std::cout : std::cerr) << report << '\n';
+        if (seeded) {
+            std::cout << "Start the server with:  LifeLink --db " << config.databasePath << '\n';
+        }
+        return seeded ? 0 : 1;
     }
 
     const std::optional<std::string> webRoot = findWebRoot(config.webRoot, arguments[0]);
