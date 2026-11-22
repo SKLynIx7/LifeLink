@@ -11,6 +11,10 @@
   LifeLink.setupHeader(session, { back: true });
 
   const MAX_OPEN_INVITATIONS = 10;
+  // Search radius: "auto" widens 5 -> 10 -> 15 -> 20 -> 25 km; the server never goes beyond 25 km.
+  const RADIUS_STEPS = [5, 10, 15, 20, 25];
+  const MAX_RADIUS = 25;
+  const STEP_PAUSE_MS = 450;  // long enough to read each "expanding" message
   const requestMessage = document.getElementById("request-message");
   const listMessage = document.getElementById("list-message");
   const list = document.getElementById("request-list");
@@ -18,70 +22,149 @@
   const state = {
     requests: [],
     expandedId: null,
-    candidates: {},          // request id -> { candidates, invitations_left }
+    candidates: {},          // request id -> { candidates, invitations_left, radius_km, auto_expand, radii_tried }
+    radiusMode: {},          // request id -> "auto" or 5 / 10 / 15 / 20 / 25
+    searchStatus: {},        // request id -> message shown while the search is widening
+    searching: new Set(),    // request ids with a search in progress
     selected: new Set(),     // donor ids ticked in the expanded request
     lastRendered: ""
   };
 
   // ---------------- New request form ----------------
+  // Hospitals as cards (hospital-list.js), nearest to the user's saved location first.
+  let hospitalList = null;
   async function loadHospitals() {
-    const result = await api("GET", "/api/hospitals");
-    const select = document.getElementById("hospital");
-    if (!result.ok) {
-      showMessage(requestMessage, "Could not load hospitals. Please refresh the page.");
-      return;
-    }
-    select.replaceChildren(
-      ...result.data.hospitals.map((hospital) =>
-        h("option", { value: String(hospital.id) }, `${hospital.name} — ${hospital.address}`))
-    );
+    const me = await api("GET", "/api/me");
+    const origin = me.ok && me.data.location
+      ? { latitude: me.data.location.latitude, longitude: me.data.location.longitude } : null;
+    hospitalList = HospitalList.create(document.getElementById("hospital-list"), {
+      mode: "select",
+      origin,
+      onSelect: () => showMessage(requestMessage, "")
+    });
   }
 
   document.getElementById("blood-group").replaceChildren(
     ...BLOOD_GROUPS.map((group) => h("option", { value: group }, group))
   );
+  function radiusOptions(selected) {
+    return [
+      h("option", { value: "auto", selected: selected === "auto" }, "Auto-expand (5 → 25 km)"),
+      ...RADIUS_STEPS.map((km) => h("option", { value: String(km), selected: selected === km }, `${km} km`))
+    ];
+  }
+  const radiusSelect = document.getElementById("radius");
+  radiusSelect.replaceChildren(...radiusOptions("auto"));
+
+  function readRadius(value) {
+    return value === "auto" ? "auto" : Number(value);
+  }
+
   document.getElementById("units").replaceChildren(
     ...Array.from({ length: 10 }, (_, index) => h("option", { value: String(index + 1) }, String(index + 1)))
   );
 
   document.getElementById("request-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const button = event.target.querySelector("button");
+    const button = event.target.querySelector("button[type=submit]");
+    const hospital = hospitalList ? hospitalList.selected : null;
+    if (!hospital) {
+      showMessage(requestMessage, "Choose a hospital that is open now.");
+      document.getElementById("hospital-list").scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const mode = readRadius(radiusSelect.value);
     button.disabled = true;
     const result = await api("POST", "/api/requests", {
-      hospital_id: Number(document.getElementById("hospital").value),
+      hospital_id: hospital.id,
       blood_type: document.getElementById("blood-group").value,
-      units_required: Number(document.getElementById("units").value)
+      units_required: Number(document.getElementById("units").value),
+      radius_km: mode
     });
     button.disabled = false;
     if (!result.ok) {
       showMessage(requestMessage, result.data.error || "Could not create the request.");
+      // The server re-checks the hospital: if it has just closed, refresh the cards.
+      if (result.status === 409 && result.data.hospital_status) hospitalList.showUnavailableMessage(result.data.error);
       return;
     }
-    showMessage(requestMessage, result.data.candidates.length
-      ? `Request created. ${result.data.candidates.length} compatible donors found — choose whom to invite below.`
-      : "Request created, but no compatible donors are available within 20 km right now.",
-      result.data.candidates.length ? "success" : "info");
-    state.expandedId = result.data.request_id;
+    const requestId = result.data.request_id;
+    showMessage(requestMessage, "Request created. Choose whom to invite below.", "success");
+    state.expandedId = requestId;
     state.selected.clear();
-    state.candidates[result.data.request_id] = {
-      candidates: result.data.candidates,
-      invitations_left: MAX_OPEN_INVITATIONS
-    };
+    state.radiusMode[requestId] = mode;
+    state.searching.add(requestId);  // the step-by-step search below loads the donors
     await refresh(true);
     list.scrollIntoView({ behavior: "smooth", block: "start" });
+    await searchDonors(requestId, { showSteps: true });
   });
 
   // ---------------- Data loading ----------------
-  async function loadCandidates(requestId) {
-    const result = await api("GET", `/api/requests/${requestId}/candidates`);
-    if (result.ok) {
-      state.candidates[requestId] = result.data;
-      // Drop ticks for donors who can no longer be invited.
-      const available = new Set(result.data.candidates.map((donor) => donor.id));
-      [...state.selected].forEach((id) => { if (!available.has(id)) state.selected.delete(id); });
-    } else {
+  function radiusModeOf(requestId) {
+    return state.radiusMode[requestId] ?? "auto";
+  }
+
+  async function fetchCandidates(requestId, radius) {
+    const result = await api("GET", `/api/requests/${requestId}/candidates?radius_km=${radius}`);
+    return result.ok ? result.data : null;
+  }
+
+  function storeCandidates(requestId, data) {
+    if (!data) {
       delete state.candidates[requestId];
+      return;
+    }
+    state.candidates[requestId] = data;
+    // Drop ticks for donors who can no longer be invited (or are now outside the radius).
+    const available = new Set(data.candidates.map((donor) => donor.id));
+    [...state.selected].forEach((id) => { if (!available.has(id)) state.selected.delete(id); });
+  }
+
+  // Quiet reload for the 10-second refresh: one call, the server does any widening.
+  async function loadCandidates(requestId) {
+    if (state.searching.has(requestId)) return;
+    storeCandidates(requestId, await fetchCandidates(requestId, radiusModeOf(requestId)));
+  }
+
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Search shown step by step: with auto-expand, tries 5, 10, 15, 20 and 25 km in turn
+  // and tells the receiver each time it widens. A fixed radius is a single search.
+  async function searchDonors(requestId, { showSteps } = {}) {
+    const mode = radiusModeOf(requestId);
+    state.searching.add(requestId);
+    state.selected.clear();
+    delete state.candidates[requestId];
+    try {
+      if (mode !== "auto" || !showSteps) {
+        state.searchStatus[requestId] = mode === "auto" ? "Searching nearby donors…" : `Searching within ${mode} km…`;
+        render();
+        storeCandidates(requestId, await fetchCandidates(requestId, mode));
+        return;
+      }
+      state.searchStatus[requestId] = "Searching nearby donors…";
+      render();
+      for (const [index, km] of RADIUS_STEPS.entries()) {
+        const data = await fetchCandidates(requestId, km);
+        if (!data) {
+          storeCandidates(requestId, null);
+          return;
+        }
+        const last = index === RADIUS_STEPS.length - 1;
+        if (data.candidates.length || last) {
+          storeCandidates(requestId, { ...data, auto_expand: true, radii_tried: RADIUS_STEPS.slice(0, index + 1) });
+          return;
+        }
+        state.searchStatus[requestId] =
+          `No donors within ${km} km. Expanding search to ${RADIUS_STEPS[index + 1]} km…`;
+        render();
+        await pause(STEP_PAUSE_MS);
+      }
+    } finally {
+      state.searching.delete(requestId);
+      delete state.searchStatus[requestId];
+      state.lastRendered = "";
+      render();
     }
   }
 
@@ -99,7 +182,7 @@
       state.expandedId = active ? active.request_id : null;
     }
     const expanded = state.requests.find((request) => request.request_id === state.expandedId);
-    if (expanded && expanded.status === "open") {
+    if (expanded && expanded.status === "open" && !state.searching.has(expanded.request_id)) {
       await loadCandidates(expanded.request_id);
     }
 
@@ -114,7 +197,10 @@
   // ---------------- Actions ----------------
   async function invite(request, body) {
     showMessage(requestMessage, "");
-    const result = await api("POST", `/api/requests/${request.request_id}/invite`, body);
+    // Send the radius on screen, so the server checks the same list the receiver sees.
+    const shown = state.candidates[request.request_id];
+    const result = await api("POST", `/api/requests/${request.request_id}/invite`,
+      { ...body, radius_km: shown ? shown.radius_km : radiusModeOf(request.request_id) });
     if (result.ok) {
       state.selected.clear();
     }
@@ -233,22 +319,59 @@
       rating);
   }
 
+  function renderRadiusControl(request) {
+    const requestId = request.request_id;
+    const select = h("select", {
+      "aria-label": "Search radius",
+      disabled: state.searching.has(requestId),
+      onchange: (event) => {
+        state.radiusMode[requestId] = readRadius(event.target.value);
+        searchDonors(requestId, { showSteps: true });
+      }
+    }, ...radiusOptions(radiusModeOf(requestId)));
+    return h("label", { class: "radius-control" }, "Search radius", select);
+  }
+
+  function radiusSummary(info) {
+    const count = info.candidates.length;
+    const found = `${count} donor${count === 1 ? "" : "s"} found`;
+    const widened = info.auto_expand && info.radii_tried && info.radii_tried.length > 1
+      ? ` (widened from ${info.radii_tried[0]} km)` : "";
+    return h("p", { class: "radius-summary", role: "status" },
+      h("strong", {}, `Showing donors within ${info.radius_km} km of the hospital`), `${widened} · ${found}`);
+  }
+
+  function emptyCandidates(info) {
+    if (info.auto_expand || info.radius_km >= MAX_RADIUS) {
+      return `No available donors found within ${MAX_RADIUS} km. Try changing the blood group or hospital, ` +
+        "or check again later. Invitations that expire or are declined free up their slots.";
+    }
+    return `No available donors within ${info.radius_km} km. Choose a larger radius or Auto-expand.`;
+  }
+
   function renderCandidates(request) {
     const info = state.candidates[request.request_id];
-    if (!info) {
-      return h("p", { class: "muted" }, "Loading donors…");
+    const status = state.searchStatus[request.request_id];
+    const controls = h("div", { class: "candidate-header" },
+      h("p", { class: "section-label" }, "Choose donors to invite"),
+      renderRadiusControl(request));
+
+    if (status || !info) {
+      return h("div", { class: "panel" }, controls,
+        h("p", { class: "search-status", role: "status", "aria-live": "polite" },
+          h("span", { class: "spinner", "aria-hidden": "true" }), status || "Searching nearby donors…"));
     }
     const slots = info.invitations_left;
     const donors = info.candidates;
 
-    const header = h("div", { class: "candidate-header" },
-      h("p", { class: "section-label" }, "Choose donors to invite"),
-      h("span", { class: "hint" }, `${slots} of ${MAX_OPEN_INVITATIONS} invitation slots free`));
+    const header = h("div", {},
+      controls,
+      radiusSummary(info),
+      h("p", { class: "hint slots" }, `${slots} of ${MAX_OPEN_INVITATIONS} invitation slots free`));
 
     if (!donors.length) {
       return h("div", { class: "panel" }, header,
-        h("p", { class: "muted" }, "No more compatible donors are available within 20 km right now. " +
-          "Invitations that expire or are declined free up their slots."));
+        h("p", { class: "empty-state" }, emptyCandidates(info)));
     }
 
     const rows = donors.map((donor) => {
