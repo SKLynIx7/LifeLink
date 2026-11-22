@@ -4,8 +4,11 @@
 #include "../engine/Donor.h"
 #include "../engine/Geo.h"
 #include "../engine/MatchRequest.h"
+#include "Statement.h"
 
 #include <iostream>
+
+using db::Statement;
 
 namespace {
 // Used for donors who have never donated: far beyond the 90-day rule.
@@ -19,59 +22,71 @@ const char* RELIABILITY_FORMULA_SQL =
     "(5.0 + COALESCE((SELECT SUM(stars) FROM ratings WHERE ratings.donor_id = donor_profiles.user_id), 0)) * 1.0 / "
     "(1 + (SELECT COUNT(*) FROM ratings WHERE ratings.donor_id = donor_profiles.user_id))";
 
-// RAII wrapper so every prepared statement is always finalized.
-class Statement {
-public:
-    Statement(sqlite3* connection, const char* sql) {
-        prepared = sqlite3_prepare_v2(connection, sql, -1, &handle, nullptr) == SQLITE_OK;
-    }
-    ~Statement() {
-        sqlite3_finalize(handle);
-    }
-    Statement(const Statement&) = delete;
-    Statement& operator=(const Statement&) = delete;
-
-    bool isPrepared() const {
-        return prepared;
-    }
-
-    Statement& bind(int index, int value) {
-        sqlite3_bind_int(handle, index, value);
-        return *this;
-    }
-    Statement& bind(int index, double value) {
-        sqlite3_bind_double(handle, index, value);
-        return *this;
-    }
-    Statement& bind(int index, const std::string& value) {
-        sqlite3_bind_text(handle, index, value.c_str(), -1, SQLITE_TRANSIENT);
-        return *this;
-    }
-    Statement& bindNull(int index) {
-        sqlite3_bind_null(handle, index);
-        return *this;
-    }
-
-    int step() {
-        return sqlite3_step(handle);
-    }
-
-    int columnInt(int column) const {
-        return sqlite3_column_int(handle, column);
-    }
-    double columnDouble(int column) const {
-        return sqlite3_column_double(handle, column);
-    }
-    // NULL-safe: returns an empty string instead of crashing on a NULL column.
-    std::string columnText(int column) const {
-        const unsigned char* text = sqlite3_column_text(handle, column);
-        return text == nullptr ? std::string() : std::string(reinterpret_cast<const char*>(text));
-    }
-
-private:
-    sqlite3_stmt* handle = nullptr;
-    bool prepared = false;
+// Upgrades from older schema versions, applied in order on start-up, so an existing
+// lifelink.db keeps its accounts. Each entry upgrades FROM that version to the next one.
+struct Migration {
+    int fromVersion;
+    const char* sql;
 };
+const Migration MIGRATIONS[] = {
+    {5, R"(
+        ALTER TABLE users ADD COLUMN address TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN city TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN state TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN country TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN postal_code TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN place_id TEXT NOT NULL DEFAULT '';
+        UPDATE users SET address = area WHERE address = '';
+    )"},
+    {6, R"(
+        ALTER TABLE hospitals ADD COLUMN email TEXT;
+        ALTER TABLE hospitals ADD COLUMN password_hash TEXT;
+        ALTER TABLE hospitals ADD COLUMN phone TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN emergency_phone TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN city TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN state TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN country TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN pincode TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN place_id TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN hospital_type TEXT NOT NULL DEFAULT 'Other' CHECK(hospital_type IN ('Government', 'Private', 'Trust', 'NGO', 'Other'));
+        ALTER TABLE hospitals ADD COLUMN license_number TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN available_blood_groups TEXT NOT NULL DEFAULT 'A+,A-,B+,B-,AB+,AB-,O+,O-';
+        ALTER TABLE hospitals ADD COLUMN opening_time TEXT NOT NULL DEFAULT '00:00';
+        ALTER TABLE hospitals ADD COLUMN closing_time TEXT NOT NULL DEFAULT '00:00';
+        ALTER TABLE hospitals ADD COLUMN working_days TEXT NOT NULL DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun';
+        ALTER TABLE hospitals ADD COLUMN website TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN description TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN facilities TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN availability_status TEXT NOT NULL DEFAULT 'open' CHECK(availability_status IN ('open', 'closing_soon', 'temporarily_closed', 'permanently_closed'));
+        ALTER TABLE hospitals ADD COLUMN closes_at TEXT;
+        ALTER TABLE hospitals ADD COLUMN closure_reason TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN status_updated_at TEXT;
+        ALTER TABLE hospitals ADD COLUMN registered_at TEXT;
+        UPDATE hospitals SET hospital_type = 'Government' WHERE name IN ('Doon Hospital', 'Coronation Hospital');
+        UPDATE hospitals SET hospital_type = 'Private'
+        WHERE name IN ('Shri Mahant Indiresh Hospital', 'Synergy Institute of Medical Sciences',
+                       'Max Super Speciality Hospital', 'CMI Hospital');
+    )"},
+    {7, R"(
+        ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0 CHECK(is_admin IN (0, 1));
+        -- Hospitals registered before approval existed stay visible: they start as verified.
+        ALTER TABLE hospitals ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'verified'
+            CHECK(verification_status IN ('pending', 'verified', 'rejected'));
+        ALTER TABLE hospitals ADD COLUMN verification_note TEXT NOT NULL DEFAULT '';
+        ALTER TABLE hospitals ADD COLUMN verified_at TEXT;
+    )"},
+};
+// The oldest version that can still be upgraded; anything older must be recreated.
+constexpr int OLDEST_UPGRADABLE_VERSION = 5;
+
+// Binds the 9 location values (area, latitude, longitude, address, city, state,
+// country, postal code, place id) to consecutive placeholders starting at `first`.
+void bindLocation(Statement& statement, int first, const UserLocation& location) {
+    statement.bind(first, location.area).bind(first + 1, location.latitude).bind(first + 2, location.longitude)
+             .bind(first + 3, location.address).bind(first + 4, location.city).bind(first + 5, location.state)
+             .bind(first + 6, location.country).bind(first + 7, location.postalCode)
+             .bind(first + 8, location.placeId);
+}
 
 const char* SCHEMA = R"(
     CREATE TABLE IF NOT EXISTS users (
@@ -86,7 +101,16 @@ const char* SCHEMA = R"(
         latitude REAL NOT NULL CHECK(latitude BETWEEN -90 AND 90),
         longitude REAL NOT NULL CHECK(longitude BETWEEN -180 AND 180),
         notifications_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        -- Address details from the map picker (version 6). Empty when not known.
+        address TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT '',
+        country TEXT NOT NULL DEFAULT '',
+        postal_code TEXT NOT NULL DEFAULT '',
+        place_id TEXT NOT NULL DEFAULT '',
+        -- Administrators approve new hospitals (version 8). Set with: LifeLink --create-admin <email>
+        is_admin INTEGER NOT NULL DEFAULT 0 CHECK(is_admin IN (0, 1))
     );
 
     CREATE TABLE IF NOT EXISTS donor_profiles (
@@ -103,7 +127,50 @@ const char* SCHEMA = R"(
         name TEXT NOT NULL UNIQUE,
         address TEXT NOT NULL,
         latitude REAL NOT NULL CHECK(latitude BETWEEN -90 AND 90),
-        longitude REAL NOT NULL CHECK(longitude BETWEEN -180 AND 180)
+        longitude REAL NOT NULL CHECK(longitude BETWEEN -180 AND 180),
+        -- Hospital accounts (version 7). The seeded hospitals have no email, so no login.
+        email TEXT,
+        password_hash TEXT,
+        phone TEXT NOT NULL DEFAULT '',
+        emergency_phone TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT '',
+        country TEXT NOT NULL DEFAULT '',
+        pincode TEXT NOT NULL DEFAULT '',
+        place_id TEXT NOT NULL DEFAULT '',
+        hospital_type TEXT NOT NULL DEFAULT 'Other'
+            CHECK(hospital_type IN ('Government', 'Private', 'Trust', 'NGO', 'Other')),
+        license_number TEXT NOT NULL DEFAULT '',
+        available_blood_groups TEXT NOT NULL DEFAULT 'A+,A-,B+,B-,AB+,AB-,O+,O-',
+        opening_time TEXT NOT NULL DEFAULT '00:00',   -- same opening and closing time = 24 hours
+        closing_time TEXT NOT NULL DEFAULT '00:00',
+        working_days TEXT NOT NULL DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
+        website TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        facilities TEXT NOT NULL DEFAULT '',
+        availability_status TEXT NOT NULL DEFAULT 'open'
+            CHECK(availability_status IN ('open', 'closing_soon', 'temporarily_closed', 'permanently_closed')),
+        closes_at TEXT,                               -- set with 'closing_soon' (UTC)
+        closure_reason TEXT NOT NULL DEFAULT '',
+        status_updated_at TEXT,
+        registered_at TEXT,
+        -- New registrations wait for an administrator (version 8). The listed hospitals are verified.
+        verification_status TEXT NOT NULL DEFAULT 'verified'
+            CHECK(verification_status IN ('pending', 'verified', 'rejected')),
+        verification_note TEXT NOT NULL DEFAULT '',
+        verified_at TEXT
+    );
+
+    -- One account per hospital email; hospitals without an account have NULL.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_hospitals_email ON hospitals(email) WHERE email IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_hospitals_location ON hospitals(latitude, longitude);
+
+    CREATE TABLE IF NOT EXISTS hospital_sessions (
+        token TEXT PRIMARY KEY,
+        hospital_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY(hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS blood_requests (
@@ -163,6 +230,33 @@ const char* SCHEMA = R"(
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    -- Urgent blood needs posted by a hospital (version 8). Active while not closed and not expired.
+    CREATE TABLE IF NOT EXISTS emergency_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hospital_id INTEGER NOT NULL,
+        blood_type TEXT NOT NULL CHECK(blood_type IN ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
+        units INTEGER NOT NULL CHECK(units BETWEEN 1 AND 20),
+        urgency TEXT NOT NULL CHECK(urgency IN ('critical', 'urgent')),
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT NOT NULL,
+        closed_at TEXT,
+        FOREIGN KEY(hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_emergency_posts_active ON emergency_posts(expires_at, closed_at);
+    CREATE INDEX IF NOT EXISTS idx_emergency_posts_hospital ON emergency_posts(hospital_id);
+
+    -- "Notify me when this hospital reopens" (version 8). notified_at is set once it reopens.
+    CREATE TABLE IF NOT EXISTS reopen_alerts (
+        user_id INTEGER NOT NULL,
+        hospital_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        notified_at TEXT,
+        PRIMARY KEY(user_id, hospital_id),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS login_attempts (
         email TEXT PRIMARY KEY COLLATE NOCASE,
         failed_count INTEGER NOT NULL DEFAULT 0,
@@ -170,6 +264,7 @@ const char* SCHEMA = R"(
     );
 
     CREATE INDEX IF NOT EXISTS idx_users_blood_type ON users(blood_type);
+    CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
     CREATE INDEX IF NOT EXISTS idx_donor_profiles_available ON donor_profiles(available);
     CREATE INDEX IF NOT EXISTS idx_blood_requests_receiver ON blood_requests(receiver_id);
     CREATE INDEX IF NOT EXISTS idx_invitations_request ON invitations(request_id, status);
@@ -212,7 +307,7 @@ bool Database::initialize() {
         version = statement.columnInt(0);
     }
 
-    if ((version == 0 && tableExists("users")) || (version > 0 && version < SCHEMA_VERSION)) {
+    if ((version == 0 && tableExists("users")) || (version > 0 && version < OLDEST_UPGRADABLE_VERSION)) {
         setError("This database was created by an older version of LifeLink. "
                  "Delete " + filePath + " and start the server again.");
         return false;
@@ -222,11 +317,28 @@ bool Database::initialize() {
         return false;
     }
 
+    // Upgrades, table creation and seeding happen together or not at all.
+    if (!beginTransaction()) {
+        return false;
+    }
+    bool ok = true;
+    if (version > 0) {
+        for (const Migration& migration : MIGRATIONS) {
+            if (ok && migration.fromVersion >= version && migration.fromVersion < SCHEMA_VERSION) {
+                ok = execute(migration.sql);
+            }
+        }
+    }
     // Recalculate every donor's score on start-up, so older data follows the current rule.
-    return execute(SCHEMA) &&
-           execute("PRAGMA user_version = " + std::to_string(SCHEMA_VERSION) + ";") &&
-           execute(std::string("UPDATE donor_profiles SET reliability_score = ") + RELIABILITY_FORMULA_SQL + ";") &&
-           seedHospitals();
+    ok = ok && execute(SCHEMA) &&
+         execute("PRAGMA user_version = " + std::to_string(SCHEMA_VERSION) + ";") &&
+         execute(std::string("UPDATE donor_profiles SET reliability_score = ") + RELIABILITY_FORMULA_SQL + ";") &&
+         seedHospitals();
+    if (!ok) {
+        rollback();
+        return false;
+    }
+    return commit();
 }
 
 void Database::close() {
@@ -252,22 +364,23 @@ std::optional<int> Database::registerUser(const std::string& name, const std::st
                                           const std::string& passwordHash,
                                           const std::string& securityQuestion,
                                           const std::string& securityAnswerHash,
-                                          const std::string& bloodType, const std::string& area,
-                                          double latitude, double longitude) {
+                                          const std::string& bloodType, const UserLocation& location) {
     if (!isValidBloodType(bloodType)) {
         setError("Choose a valid blood group.");
         return std::nullopt;
     }
     Statement statement(connection,
         "INSERT INTO users (name, email, password_hash, security_question, security_answer_hash, "
-        "blood_type, area, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
+        "blood_type, area, latitude, longitude, address, city, state, country, postal_code, place_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
     if (!statement.isPrepared()) {
         fail("prepare register user");
         return std::nullopt;
     }
 
     statement.bind(1, name).bind(2, email).bind(3, passwordHash).bind(4, securityQuestion)
-             .bind(5, securityAnswerHash).bind(6, bloodType).bind(7, area).bind(8, latitude).bind(9, longitude);
+             .bind(5, securityAnswerHash).bind(6, bloodType);
+    bindLocation(statement, 7, location);
 
     if (statement.step() != SQLITE_DONE) {
         if (sqlite3_extended_errcode(connection) == SQLITE_CONSTRAINT_UNIQUE) {
@@ -302,8 +415,31 @@ bool Database::createDonorProfile(int userId, const std::string& phone,
     return statement.step() == SQLITE_DONE || fail("create donor profile");
 }
 
+bool Database::setLastDonationDate(int donorId, const std::optional<std::string>& date) {
+    Statement statement(connection, "UPDATE donor_profiles SET last_donation_date = ? WHERE user_id = ?;");
+    if (!statement.isPrepared()) {
+        return fail("prepare set last donation");
+    }
+    if (date) {
+        statement.bind(1, *date);
+    } else {
+        statement.bindNull(1);
+    }
+    statement.bind(2, donorId);
+    return statement.step() == SQLITE_DONE || fail("set last donation");
+}
+
+int Database::countUsers() const {
+    Statement statement(connection, "SELECT COUNT(*) FROM users;");
+    if (!statement.isPrepared()) {
+        fail("prepare count users");
+        return -1;
+    }
+    return statement.step() == SQLITE_ROW ? statement.columnInt(0) : -1;
+}
+
 std::optional<UserAccount> Database::findUserByEmail(const std::string& email) const {
-    Statement statement(connection, "SELECT id, name, email, EXISTS(SELECT 1 FROM donor_profiles WHERE user_id = users.id), blood_type, area, latitude, longitude FROM users WHERE email = ?;");
+    Statement statement(connection, "SELECT id, name, email, EXISTS(SELECT 1 FROM donor_profiles WHERE user_id = users.id), blood_type, area, latitude, longitude, is_admin FROM users WHERE email = ?;");
     if (!statement.isPrepared()) {
         fail("prepare find user by email");
         return std::nullopt;
@@ -316,11 +452,11 @@ std::optional<UserAccount> Database::findUserByEmail(const std::string& email) c
 
     return UserAccount{statement.columnInt(0), statement.columnText(1), statement.columnText(2),
                        statement.columnInt(3) != 0, statement.columnText(4), statement.columnText(5),
-                       statement.columnDouble(6), statement.columnDouble(7)};
+                       statement.columnDouble(6), statement.columnDouble(7), statement.columnInt(8) != 0};
 }
 
 std::optional<UserAccount> Database::findUserById(int userId) const {
-    Statement statement(connection, "SELECT id, name, email, EXISTS(SELECT 1 FROM donor_profiles WHERE user_id = users.id), blood_type, area, latitude, longitude FROM users WHERE id = ?;");
+    Statement statement(connection, "SELECT id, name, email, EXISTS(SELECT 1 FROM donor_profiles WHERE user_id = users.id), blood_type, area, latitude, longitude, is_admin FROM users WHERE id = ?;");
     if (!statement.isPrepared()) {
         fail("prepare find user by id");
         return std::nullopt;
@@ -333,7 +469,7 @@ std::optional<UserAccount> Database::findUserById(int userId) const {
 
     return UserAccount{statement.columnInt(0), statement.columnText(1), statement.columnText(2),
                        statement.columnInt(3) != 0, statement.columnText(4), statement.columnText(5),
-                       statement.columnDouble(6), statement.columnDouble(7)};
+                       statement.columnDouble(6), statement.columnDouble(7), statement.columnInt(8) != 0};
 }
 
 nlohmann::json Database::getDonorProfile(int donorId) const {
@@ -368,21 +504,56 @@ nlohmann::json Database::getDonorProfile(int donorId) const {
 }
 
 bool Database::updateProfile(int userId, const std::string& name, const std::string& bloodType,
-                             const std::string& area, double latitude, double longitude) {
+                             const UserLocation& location) {
     if (!isValidBloodType(bloodType)) {
         setError("Choose a valid blood group.");
         return false;
     }
-    Statement statement(connection,
-        "UPDATE users SET name = ?, blood_type = ?, area = ?, latitude = ?, longitude = ? WHERE id = ?;");
+    Statement statement(connection, "UPDATE users SET name = ?, blood_type = ? WHERE id = ?;");
     if (!statement.isPrepared()) {
         return fail("prepare update profile");
     }
-    statement.bind(1, name).bind(2, bloodType).bind(3, area).bind(4, latitude).bind(5, longitude).bind(6, userId);
+    statement.bind(1, name).bind(2, bloodType).bind(3, userId);
     if (statement.step() != SQLITE_DONE) {
         return fail("update profile");
     }
+    return updateLocation(userId, location);
+}
+
+bool Database::updateLocation(int userId, const UserLocation& location) {
+    Statement statement(connection,
+        "UPDATE users SET area = ?, latitude = ?, longitude = ?, address = ?, city = ?, state = ?, "
+        "country = ?, postal_code = ?, place_id = ? WHERE id = ?;");
+    if (!statement.isPrepared()) {
+        return fail("prepare update location");
+    }
+    bindLocation(statement, 1, location);
+    statement.bind(10, userId);
+    if (statement.step() != SQLITE_DONE) {
+        return fail("update location");
+    }
+    if (sqlite3_changes(connection) != 1) {
+        setError("Account was not found.");
+        return false;
+    }
     return true;
+}
+
+std::optional<UserLocation> Database::getLocation(int userId) const {
+    Statement statement(connection,
+        "SELECT area, latitude, longitude, address, city, state, country, postal_code, place_id "
+        "FROM users WHERE id = ?;");
+    if (!statement.isPrepared()) {
+        fail("prepare get location");
+        return std::nullopt;
+    }
+    statement.bind(1, userId);
+    if (statement.step() != SQLITE_ROW) {
+        return std::nullopt;
+    }
+    return UserLocation{statement.columnText(0), statement.columnDouble(1), statement.columnDouble(2),
+                        statement.columnText(3), statement.columnText(4), statement.columnText(5),
+                        statement.columnText(6), statement.columnText(7), statement.columnText(8)};
 }
 
 bool Database::updateDonorPhone(int donorId, const std::string& phone) {
@@ -516,7 +687,8 @@ bool Database::deleteSession(const std::string& token) {
 }
 
 bool Database::deleteExpiredSessions() {
-    return execute("DELETE FROM sessions WHERE expires_at <= datetime('now');");
+    return execute("DELETE FROM sessions WHERE expires_at <= datetime('now');"
+                   "DELETE FROM hospital_sessions WHERE expires_at <= datetime('now');");
 }
 
 bool Database::isLockedOut(const std::string& email) const {
@@ -570,24 +742,6 @@ void Database::clearFailedAttempts(const std::string& email) {
     if (statement.step() != SQLITE_DONE) {
         fail("clear failed attempts");
     }
-}
-
-nlohmann::json Database::getHospitals() const {
-    nlohmann::json hospitals = nlohmann::json::array();
-    Statement statement(connection, "SELECT id, name, address FROM hospitals ORDER BY name;");
-    if (!statement.isPrepared()) {
-        fail("prepare get hospitals");
-        return hospitals;
-    }
-
-    while (statement.step() == SQLITE_ROW) {
-        hospitals.push_back({
-            {"id", statement.columnInt(0)},
-            {"name", statement.columnText(1)},
-            {"address", statement.columnText(2)}
-        });
-    }
-    return hospitals;
 }
 
 std::optional<int> Database::createBloodRequest(int receiverId, int hospitalId,
@@ -649,23 +803,29 @@ bool Database::updateRequestStatus(int requestId, const std::string& status) {
     return statement.step() == SQLITE_DONE || fail("update request status");
 }
 
-int Database::loadCandidatesForRequest(MatchRequest& request, int receiverId) const {
+std::vector<Donor> Database::loadDonorPool(int requestId, int hospitalId, int receiverId) const {
+    std::vector<Donor> pool;
     double hospitalLatitude = 0.0;
     double hospitalLongitude = 0.0;
     {
         Statement hospital(connection, "SELECT latitude, longitude FROM hospitals WHERE id = ?;");
         if (!hospital.isPrepared()) {
             fail("prepare load hospital");
-            return 0;
+            return pool;
         }
-        hospital.bind(1, request.getHospitalId());
+        hospital.bind(1, hospitalId);
         if (hospital.step() != SQLITE_ROW) {
             setError("Hospital was not found.");
-            return 0;
+            return pool;
         }
         hospitalLatitude = hospital.columnDouble(0);
         hospitalLongitude = hospital.columnDouble(1);
     }
+
+    // Geospatial pre-filter: a box around the hospital that just contains the 25 km
+    // circle, so SQLite (with the users(latitude, longitude) index) only returns nearby
+    // users. The exact haversine distance is checked below for each of them.
+    const BoundingBox box = boundingBoxAround(hospitalLatitude, hospitalLongitude, MAX_SEARCH_RADIUS_KM);
 
     // Days since last donation are computed from the stored date, so they never go stale.
     Statement donors(connection, R"(
@@ -676,6 +836,7 @@ int Database::loadCandidatesForRequest(MatchRequest& request, int receiverId) co
         FROM users
         JOIN donor_profiles ON donor_profiles.user_id = users.id
         WHERE users.id != ? AND donor_profiles.available = 1
+          AND users.latitude BETWEEN ? AND ? AND users.longitude BETWEEN ? AND ?
           -- not already invited (and still waiting), accepted, or rejected for this request
           AND NOT EXISTS (
               SELECT 1 FROM invitations
@@ -692,20 +853,30 @@ int Database::loadCandidatesForRequest(MatchRequest& request, int receiverId) co
     )");
     if (!donors.isPrepared()) {
         fail("prepare load candidates");
-        return 0;
+        return pool;
     }
 
-    donors.bind(1, NEVER_DONATED_DAYS).bind(2, receiverId).bind(3, request.getRequestId());
+    donors.bind(1, NEVER_DONATED_DAYS).bind(2, receiverId)
+          .bind(3, box.minLatitude).bind(4, box.maxLatitude)
+          .bind(5, box.minLongitude).bind(6, box.maxLongitude)
+          .bind(7, requestId);
 
-    int candidateCount = 0;
     while (donors.step() == SQLITE_ROW) {
         const double distanceKm = haversineKm(hospitalLatitude, hospitalLongitude,
                                               donors.columnDouble(4), donors.columnDouble(5));
-
-        const Donor donor(donors.columnInt(0), donors.columnText(1), donors.columnText(2),
+        if (distanceKm > MAX_SEARCH_RADIUS_KM) {
+            continue;  // inside the box's corner but outside the 25 km circle
+        }
+        pool.emplace_back(donors.columnInt(0), donors.columnText(1), donors.columnText(2),
                           donors.columnText(3), distanceKm, donors.columnInt(6),
                           donors.columnDouble(7), donors.columnInt(8) != 0);
+    }
+    return pool;
+}
 
+int Database::loadCandidatesForRequest(MatchRequest& request, int receiverId) const {
+    int candidateCount = 0;
+    for (const Donor& donor : loadDonorPool(request.getRequestId(), request.getHospitalId(), receiverId)) {
         // The engine checks eligibility, compatibility and the search radius.
         if (request.addCandidate(donor)) {
             ++candidateCount;
@@ -893,7 +1064,7 @@ nlohmann::json Database::getNotifications(int userId) const {
         Statement statement(connection, R"(
             SELECT invitations.request_id, invitations.responded_at, donors.name, hospitals.name,
                    blood_requests.required_blood_type,
-                   invitations.responded_at > (SELECT notifications_seen_at FROM users WHERE id = ?)
+                   invitations.responded_at >= (SELECT notifications_seen_at FROM users WHERE id = ?)
             FROM invitations
             JOIN blood_requests ON blood_requests.id = invitations.request_id
             JOIN hospitals ON hospitals.id = blood_requests.hospital_id
@@ -1149,13 +1320,16 @@ bool Database::execute(const std::string& sql) {
 
 bool Database::seedHospitals() {
     return execute(R"(
-        INSERT OR IGNORE INTO hospitals (name, address, latitude, longitude)
-        VALUES ('Doon Hospital', 'Near Parade Ground, Dehradun', 30.3236, 78.0410),
-               ('Coronation Hospital', 'Chandar Nagar, Dehradun', 30.3200, 78.0280),
-               ('Shri Mahant Indiresh Hospital', 'Patel Nagar, Dehradun', 30.3060, 78.0220),
-               ('Synergy Institute of Medical Sciences', 'Ballupur, Dehradun', 30.3335, 78.0110),
-               ('Max Super Speciality Hospital', 'Malsi, Mussoorie Road, Dehradun', 30.3730, 78.0740),
-               ('CMI Hospital', 'Dalanwala, Dehradun', 30.3150, 78.0520);
+        INSERT OR IGNORE INTO hospitals (name, address, latitude, longitude, hospital_type)
+        VALUES ('Doon Hospital', 'Near Parade Ground, Dehradun', 30.3236, 78.0410, 'Government'),
+               ('Coronation Hospital', 'Chandar Nagar, Dehradun', 30.3200, 78.0280, 'Government'),
+               ('Shri Mahant Indiresh Hospital', 'Patel Nagar, Dehradun', 30.3060, 78.0220, 'Private'),
+               ('Synergy Institute of Medical Sciences', 'Ballupur, Dehradun', 30.3335, 78.0110, 'Private'),
+               ('Max Super Speciality Hospital', 'Malsi, Mussoorie Road, Dehradun', 30.3730, 78.0740, 'Private'),
+               ('CMI Hospital', 'Dalanwala, Dehradun', 30.3150, 78.0520, 'Private');
+        -- The listed hospitals are in Dehradun; fill the address parts they were added without.
+        UPDATE hospitals SET city = 'Dehradun', state = 'Uttarakhand', country = 'India'
+        WHERE email IS NULL AND city = '';
     )");
 }
 
