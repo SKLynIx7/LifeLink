@@ -12,11 +12,22 @@
     <nav id="user-slot"></nav>
   </header>
 
-  <main>
-    <h2 class="greeting" id="greeting">Welcome</h2>
-    <p class="muted greeting-sub">What would you like to do?</p>
+  <main class="dashboard-main">
+    <section class="dashboard-hero">
+      <div>
+        <p class="eyebrow">LIFELINK COMMUNITY NETWORK</p>
+        <h2 class="greeting" id="greeting">Welcome</h2>
+        <p class="greeting-sub">Whether you need blood or can donate, LifeLink helps you take the next step with confidence.</p>
+      </div>
+      <div class="hero-note">
+        <span class="hero-note-icon" aria-hidden="true">♥</span>
+        <div><strong>Safer matching</strong><small>Compatible donors, hospital distance and eligibility checks in one place.</small></div>
+      </div>
+    </section>
 
-    <section class="choices">
+    <section class="dashboard-section">
+      <div class="section-heading"><div><p class="eyebrow">CHOOSE A PATH</p><h2>How can LifeLink help today?</h2></div></div>
+      <div class="choices">
       <a class="choice-card receive" href="/receiver.html">
         <span class="choice-icon" aria-hidden="true">+</span>
         <span class="choice-text">
@@ -35,7 +46,10 @@
         </span>
         <span class="choice-arrow" aria-hidden="true">→</span>
       </a>
+      </div>
     </section>
+
+    <p class="dashboard-link"><a href="/hospitals.html">See hospitals near you and whether they are open now →</a></p>
   </main>
 
   <script src="/app.js"></script>
