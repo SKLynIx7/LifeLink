@@ -6,7 +6,9 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
+class Donor;
 class MatchRequest;
 
 struct UserAccount {
@@ -18,6 +20,84 @@ struct UserAccount {
     std::string area;
     double latitude;
     double longitude;
+    bool isAdmin = false;  // can approve or reject hospitals
+};
+
+// Where a user is. area is a short label ("Rajpur Road, Dehradun"); the rest comes
+// from the map picker and may be empty. Latitude/longitude are used for distances.
+struct UserLocation {
+    std::string area;
+    double latitude = 0.0;
+    double longitude = 0.0;
+    std::string address;     // full formatted address
+    std::string city;
+    std::string state;
+    std::string country;
+    std::string postalCode;
+    std::string placeId;     // OpenStreetMap id, e.g. "W123456"
+};
+
+// A hospital, as stored. Lists (blood groups, working days, facilities) are kept as
+// comma-separated text in the table and as vectors here.
+struct HospitalRecord {
+    int id = 0;
+    std::string name;
+    std::string email;            // empty for the listed hospitals that have no account
+    std::string phone;
+    std::string emergencyPhone;
+    std::string address;
+    std::string city;
+    std::string state;
+    std::string country;
+    std::string pincode;
+    std::string placeId;
+    double latitude = 0.0;
+    double longitude = 0.0;
+    std::string hospitalType = "Other";  // Government, Private, Trust, NGO, Other
+    std::string licenseNumber;
+    std::vector<std::string> bloodGroups;
+    std::string openingTime = "00:00";   // HH:MM; same as closing time = open 24 hours
+    std::string closingTime = "00:00";
+    std::vector<std::string> workingDays;  // "Mon" ... "Sun"
+    std::string website;
+    std::string description;
+    std::vector<std::string> facilities;
+    // What the hospital set: open, closing_soon, temporarily_closed, permanently_closed.
+    std::string availabilityState = "open";
+    std::optional<long long> secondsUntilManualClose;  // for closing_soon
+    std::string closureReason;
+    double distanceKm = -1.0;  // filled by listHospitals when a point is given
+    // Approval by an administrator: pending, verified or rejected (with a note).
+    std::string verificationStatus = "verified";
+    std::string verificationNote;
+    std::string registeredAt;
+};
+
+// An urgent blood need posted by a hospital, with the hospital's details for display.
+struct EmergencyPost {
+    int id = 0;
+    int hospitalId = 0;
+    std::string hospitalName;
+    std::string hospitalPhone;
+    std::string hospitalAddress;
+    double hospitalLatitude = 0.0;
+    double hospitalLongitude = 0.0;
+    std::string bloodType;
+    int units = 1;
+    std::string urgency;  // critical or urgent
+    std::string note;
+    std::string createdAt;
+    std::string expiresAt;
+    bool active = false;  // not closed, not expired
+    double distanceKm = -1.0;
+};
+
+// A "notify me when this hospital reopens" request.
+struct ReopenAlert {
+    int hospitalId = 0;
+    std::string hospitalName;
+    std::string createdAt;
+    std::string notifiedAt;  // empty until the hospital reopens
 };
 
 struct BloodRequestRecord {
@@ -56,7 +136,7 @@ inline const std::string CANCELLED = "cancelled";
 inline const std::string EXPIRED = "expired";
 }
 
-constexpr int SCHEMA_VERSION = 5;
+constexpr int SCHEMA_VERSION = 8;
 constexpr int SESSION_LIFETIME_HOURS = 24;
 constexpr int MAX_FAILED_ATTEMPTS = 5;
 constexpr int LOCKOUT_MINUTES = 15;
@@ -89,17 +169,22 @@ public:
                                     const std::string& passwordHash,
                                     const std::string& securityQuestion,
                                     const std::string& securityAnswerHash,
-                                    const std::string& bloodType, const std::string& area,
-                                    double latitude, double longitude);
+                                    const std::string& bloodType, const UserLocation& location);
     bool createDonorProfile(int userId, const std::string& phone,
                             const std::optional<std::string>& lastDonationDate = std::nullopt);
     std::optional<UserAccount> findUserByEmail(const std::string& email) const;
     std::optional<UserAccount> findUserById(int userId) const;
     nlohmann::json getDonorProfile(int donorId) const;
     bool setDonorAvailability(int donorId, bool available);
+    // Sets (or clears, with nullopt) a donor's last donation date. Used by the demo data.
+    bool setLastDonationDate(int donorId, const std::optional<std::string>& date);
+    int countUsers() const;
     // Profile page: details the user can change after registering.
     bool updateProfile(int userId, const std::string& name, const std::string& bloodType,
-                       const std::string& area, double latitude, double longitude);
+                       const UserLocation& location);
+    // The location used for distances to hospitals (saved from the map picker or the area list).
+    bool updateLocation(int userId, const UserLocation& location);
+    std::optional<UserLocation> getLocation(int userId) const;
     bool updateDonorPhone(int donorId, const std::string& phone);
     std::optional<std::string> getPasswordHash(const std::string& email) const;
     std::optional<std::string> getSecurityQuestion(const std::string& email) const;
@@ -118,8 +203,47 @@ public:
     void recordFailedAttempt(const std::string& email);
     void clearFailedAttempts(const std::string& email);
 
-    // ---- Hospitals and requests.
-    nlohmann::json getHospitals() const;
+    // ---- Hospital accounts (see HospitalStore.cpp).
+    std::optional<int> registerHospital(const HospitalRecord& hospital, const std::string& passwordHash);
+    std::optional<HospitalRecord> getHospital(int hospitalId) const;
+    // Every hospital, or only those within radiusKm of a point (nearest first, distance filled in).
+    std::vector<HospitalRecord> listHospitals() const;
+    std::vector<HospitalRecord> listHospitalsNear(double latitude, double longitude, double radiusKm) const;
+    std::optional<int> findHospitalIdByEmail(const std::string& email) const;
+    std::optional<std::string> getHospitalPasswordHash(const std::string& email) const;
+    bool createHospitalSession(int hospitalId, const std::string& token);
+    std::optional<int> getHospitalSessionId(const std::string& token) const;
+    bool deleteHospitalSession(const std::string& token);
+    // Profile fields only; email, location and availability have their own functions.
+    bool updateHospitalProfile(int hospitalId, const HospitalRecord& hospital);
+    bool updateHospitalLocation(int hospitalId, const HospitalRecord& hospital);
+    // closingMinutes is used only with "closing_soon".
+    bool setHospitalAvailability(int hospitalId, const std::string& state, int closingMinutes,
+                                 const std::string& reason);
+    // Administrator decision: verified, rejected (with a note) or back to pending.
+    bool setHospitalVerification(int hospitalId, const std::string& status, const std::string& note);
+    // Makes an existing account an administrator. False if there is no account with that email.
+    bool setAdminByEmail(const std::string& email, bool isAdmin);
+
+    // ---- Emergency blood postings (see HospitalStore.cpp).
+    std::optional<int> createEmergencyPost(int hospitalId, const std::string& bloodType, int units,
+                                           const std::string& urgency, const std::string& note, int hoursOpen);
+    bool closeEmergencyPost(int hospitalId, int postId);
+    int countActiveEmergencyPosts(int hospitalId) const;
+    // The hospital's own posts: active ones and those from the last 7 days.
+    std::vector<EmergencyPost> listHospitalEmergencyPosts(int hospitalId) const;
+    // Active posts of verified, not permanently closed hospitals within radiusKm, nearest first.
+    std::vector<EmergencyPost> listActiveEmergencyPostsNear(double latitude, double longitude, double radiusKm) const;
+
+    // ---- Reopen alerts.
+    bool addReopenAlert(int userId, int hospitalId);
+    bool removeReopenAlert(int userId, int hospitalId);
+    std::vector<ReopenAlert> listReopenAlerts(int userId) const;
+    bool markReopenAlertNotified(int userId, int hospitalId);
+    // When the user last opened the bell (UTC "YYYY-MM-DD HH:MM:SS").
+    std::string getNotificationsSeenAt(int userId) const;
+
+    // ---- Requests.
     std::optional<int> createBloodRequest(int receiverId, int hospitalId,
                                           const std::string& bloodType, int unitsRequired);
     std::optional<BloodRequestRecord> getBloodRequest(int requestId) const;
@@ -130,6 +254,9 @@ public:
     // ---- Matching. Loads eligible donors who can still be invited to this request:
     // not the receiver themself, not already pending, accepted or rejected for it,
     // and not committed to another open request.
+    // The pool holds every such donor within MAX_SEARCH_RADIUS_KM (25 km) of the hospital,
+    // with their distance; the engine then applies the chosen radius and ranks them.
+    std::vector<Donor> loadDonorPool(int requestId, int hospitalId, int receiverId) const;
     int loadCandidatesForRequest(MatchRequest& request, int receiverId) const;
 
     // ---- Invitations.
