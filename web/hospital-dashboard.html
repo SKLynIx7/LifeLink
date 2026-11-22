@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hospital dashboard - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/hospital-dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1><small>Hospital dashboard</small></a>
+    <nav><button type="button" id="logout" class="link-button">Log out</button></nav>
+  </header>
+
+  <main class="narrow-main">
+    <h2 class="greeting" id="hospital-name">Your hospital</h2>
+    <div id="verification-banner" class="verification-banner" role="status" hidden></div>
+
+    <!-- Availability: what donors and receivers see right now. -->
+    <section class="card request-card">
+      <div class="card-title">
+        <div><p class="label">AVAILABILITY</p><h2>Open or closed</h2></div>
+        <span class="badge neutral" title="Checked with the server every 30 seconds">Live</span>
+      </div>
+      <p id="availability-message" class="message" hidden></p>
+      <div id="status-now" class="status-now" aria-live="polite"><span class="muted">Loading…</span></div>
+      <p id="countdown" class="countdown" aria-live="off" hidden></p>
+
+      <form id="availability-form" class="stack availability-form" novalidate>
+        <fieldset class="radio-group">
+          <legend>Status</legend>
+          <label class="radio"><input type="radio" name="status" value="open" checked><span>Open</span></label>
+          <label class="radio"><input type="radio" name="status" value="temporarily_closed"><span>Temporarily closed</span></label>
+          <label class="radio"><input type="radio" name="status" value="permanently_closed"><span>Permanently closed / inactive</span></label>
+        </fieldset>
+
+        <fieldset class="radio-group" id="closure-type-group" hidden>
+          <legend>Closure</legend>
+          <label class="radio"><input type="radio" name="closure-type" value="closing_soon" checked><span>Closing soon</span></label>
+          <label class="radio"><input type="radio" name="closure-type" value="closed_now"><span>Closed now</span></label>
+        </fieldset>
+
+        <div id="closing-minutes-field" class="closing-minutes" hidden>
+          <label>Minutes until closing (1 to 720)
+            <input id="closing-minutes" type="number" min="1" max="720" step="1" inputmode="numeric" value="60">
+          </label>
+          <div class="quick-minutes" role="group" aria-label="Quick choices">
+            <button type="button" class="secondary small-button" data-minutes="45">45 min</button>
+            <button type="button" class="secondary small-button" data-minutes="60">1 h</button>
+            <button type="button" class="secondary small-button" data-minutes="120">2 h</button>
+            <button type="button" class="secondary small-button" data-minutes="240">4 h</button>
+          </div>
+          <p class="hint">Within the last 30 minutes before closing, donors see the hospital as Closed.</p>
+        </div>
+
+        <label id="reason-field" hidden>Reason (optional)
+          <select id="closure-reason"></select>
+        </label>
+
+        <button type="submit">Save availability</button>
+      </form>
+    </section>
+
+    <!-- Emergency blood requirement: alerts compatible donors within 25 km. -->
+    <section class="card urgent-card">
+      <div class="card-title">
+        <div><p class="label">EMERGENCY</p><h2>Post an urgent blood need</h2></div>
+      </div>
+      <p class="muted urgent-intro">Donors within 25 km who can give this blood group, are available and are allowed to donate today see it at once on their Donate page and in their bell.</p>
+      <p id="emergency-message" class="message" hidden></p>
+      <form id="emergency-form" class="stack" novalidate>
+        <fieldset id="emergency-fields" class="emergency-fields">
+          <div class="two-col">
+            <label class="req">Blood group needed
+              <select id="e-blood" required></select>
+            </label>
+            <label class="req">Units needed (1 to 20)
+              <input id="e-units" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
+            </label>
+          </div>
+          <div class="radio-group" role="radiogroup" aria-label="Urgency">
+            <label class="radio"><input type="radio" name="urgency" value="critical" checked><span>Critical</span></label>
+            <label class="radio"><input type="radio" name="urgency" value="urgent"><span>Urgent</span></label>
+          </div>
+          <label>Keep the post up for
+            <select id="e-hours">
+              <option value="2">2 hours</option><option value="6">6 hours</option><option value="12">12 hours</option>
+              <option value="24" selected>24 hours</option><option value="48">48 hours</option><option value="72">72 hours</option>
+            </select>
+          </label>
+          <label>Note for donors (optional)
+            <textarea id="e-note" rows="2" maxlength="300" placeholder="e.g. Road accident, patient in ICU. Ask for the blood bank on the ground floor."></textarea>
+          </label>
+          <button type="submit">Post urgent need</button>
+        </fieldset>
+      </form>
+      <div id="emergency-list" class="emergency-list"></div>
+    </section>
+
+    <!-- Profile, services and hours. -->
+    <section class="card results-card">
+      <div class="card-title">
+        <div><p class="label">PROFILE</p><h2>Hospital details</h2></div>
+      </div>
+      <p id="profile-message" class="message" hidden></p>
+      <form id="profile-form" class="stack hospital-form" novalidate>
+        <label class="req">Hospital name
+          <input id="h-name" type="text" maxlength="120" required>
+        </label>
+        <div class="two-col">
+          <label>Official email
+            <input id="h-email" type="email" disabled>
+          </label>
+          <label class="req">Phone number
+            <input id="h-phone" type="tel" maxlength="25" required>
+          </label>
+        </div>
+        <div id="service-fields" class="stack-fields"></div>
+        <div id="optional-fields" class="stack-fields"></div>
+        <button type="submit">Save details</button>
+      </form>
+    </section>
+
+    <!-- Location. -->
+    <section class="card results-card">
+      <div class="card-title">
+        <div><p class="label">LOCATION</p><h2>Address and map</h2></div>
+      </div>
+      <p id="location-message" class="message" hidden></p>
+      <form id="location-form" class="stack hospital-form" novalidate>
+        <div class="location-field" role="group" aria-labelledby="location-label">
+          <span class="field-label" id="location-label">Exact location on the map</span>
+          <div id="location-preview" class="location-preview"></div>
+          <div class="location-actions single">
+            <button type="button" id="choose-location" class="secondary">Change on map</button>
+          </div>
+          <p id="location-note" class="hint">Distances from donors to your hospital are measured from this point.</p>
+        </div>
+        <label class="req">Address <input id="h-address" type="text" maxlength="300" required></label>
+        <div class="two-col">
+          <label class="req">City <input id="h-city" type="text" maxlength="100" required></label>
+          <label class="req">State <input id="h-state" type="text" maxlength="100" required></label>
+        </div>
+        <div class="two-col">
+          <label class="req">Country <input id="h-country" type="text" maxlength="100" required></label>
+          <label class="req">PIN code <input id="h-pincode" type="text" inputmode="numeric" maxlength="6" required></label>
+        </div>
+        <button type="submit">Save location</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/location-picker.js"></script>
+  <script src="/hospital.js"></script>
+  <script>LifeLinkHospital.initDashboard();</script>
+</body>
+</html>
