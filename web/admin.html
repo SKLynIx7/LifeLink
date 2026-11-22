@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Approve hospitals - LifeLink</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/dashboard.html"><h1><b>♥</b> Life<span>Link</span></h1><small>Administrator</small></a>
+    <nav id="user-slot"></nav>
+  </header>
+
+  <main>
+    <section class="card request-card">
+      <div class="card-title">
+        <div><p class="label">ADMINISTRATOR</p><h2>Approve hospitals</h2></div>
+      </div>
+      <p class="muted">New hospitals stay hidden from donors and receivers until you approve them. Check the licence number, address and map position before approving.</p>
+      <p id="admin-message" class="message" hidden></p>
+      <div class="admin-tabs" role="tablist" aria-label="Hospital status">
+        <button type="button" role="tab" class="admin-tab" data-status="pending">Pending <span class="count"></span></button>
+        <button type="button" role="tab" class="admin-tab" data-status="verified">Verified <span class="count"></span></button>
+        <button type="button" role="tab" class="admin-tab" data-status="rejected">Rejected <span class="count"></span></button>
+      </div>
+      <div id="admin-list" class="admin-list" role="tabpanel"><p class="muted">Loading…</p></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>
