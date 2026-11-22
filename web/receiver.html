@@ -19,14 +19,20 @@
       </div>
       <p id="request-message" class="message" hidden></p>
       <form id="request-form">
-        <label class="full">Hospital
-          <select id="hospital" required></select>
-        </label>
+        <div class="full hospital-choice">
+          <span class="field-label">Hospital</span>
+          <p class="hint">Only hospitals that are open now can be chosen. Distances are from your saved location.</p>
+          <div id="hospital-list"></div>
+        </div>
         <label>Required blood group
           <select id="blood-group" required></select>
         </label>
         <label>Units needed
           <select id="units"></select>
+        </label>
+        <label class="full">Search radius around the hospital
+          <select id="radius"></select>
+          <span class="hint">Auto-expand starts at 5 km and widens to 10, 15, 20 and 25 km until a donor is found.</span>
         </label>
         <button type="submit">Find compatible donors →</button>
       </form>
@@ -43,6 +49,7 @@
   </main>
 
   <script src="/app.js"></script>
+  <script src="/hospital-list.js"></script>
   <script src="/receiver.js"></script>
 </body>
 </html>
