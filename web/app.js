@@ -213,6 +213,16 @@ const LifeLink = (() => {
       ? `Notifications, ${data.unread} new` : "Notifications");
 
     const items = data.items.map((item) => {
+      if (item.type === "emergency") {
+        return h("a", { class: `notice urgent ${item.unread ? "unread" : ""}`, href: "/donor.html#urgent" },
+          h("strong", {}, `${item.urgency === "critical" ? "Critical" : "Urgent"}: ${item.units} unit${item.units === 1 ? "" : "s"} of ${item.blood_type} needed`),
+          h("span", {}, `${item.hospital_name} · ${item.distance_km} km · ${timeAgo(item.at)}`));
+      }
+      if (item.type === "reopened") {
+        return h("a", { class: `notice ${item.unread ? "unread" : ""}`, href: "/hospitals.html" },
+          h("strong", {}, `${item.hospital_name} has reopened`),
+          h("span", {}, `${timeAgo(item.at)} · you asked to be told`));
+      }
       if (item.type === "invitation") {
         return h("a", { class: "notice unread", href: "/donor.html" },
           h("strong", {}, `${item.person} needs ${item.blood_type} blood`),
@@ -257,6 +267,9 @@ const LifeLink = (() => {
           h("dt", {}, "Area"), h("dd", {}, me.area)),
         h("p", { class: "menu-note" }, "Not registered as a donor yet."),
         h("a", { class: "menu-link", href: "/donor.html" }, "Become a donor"));
+    }
+    if (me && me.is_admin) {
+      rows.push(h("a", { class: "menu-link", href: "/admin.html" }, "Approve hospitals (admin)"));
     }
     rows.push(
       h("a", { class: "menu-link", href: "/profile.html" }, "Edit profile"),
@@ -337,9 +350,22 @@ const LifeLink = (() => {
     document.addEventListener("lifelink:changed", refreshHeader);
   }
 
+  // ---- Hospital availability, as worked out by the server (status.code / badge / message).
+  function hospitalBadge(status) {
+    const code = status && status.code ? status.code : "closed";
+    return h("span", { class: `hs-badge hs-${code.replace(/_/g, "-")}` }, status ? status.badge : "Closed");
+  }
+
+  // 95 -> "1 h 35 min", 45 -> "45 min".
+  function formatMinutes(minutes) {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return hours ? `${hours} h${rest ? ` ${rest} min` : ""}` : `${rest} min`;
+  }
+
   return {
     BLOOD_GROUPS, AREAS, DASHBOARD, getSession, saveSession, clearSession, api, requireLogin, logout,
     h, showMessage, formatTime, minutesLeft, timeAgo, statusBadge, setupHeader, startPolling, announceChange,
-    getMe: () => header.me, refreshHeader
+    getMe: () => header.me, refreshHeader, hospitalBadge, formatMinutes
   };
 })();
