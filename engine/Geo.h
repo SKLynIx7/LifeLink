@@ -20,4 +20,28 @@ inline double haversineKm(double latitude1, double longitude1, double latitude2,
     return 2.0 * earthRadiusKm * std::asin(std::min(1.0, std::sqrt(a)));
 }
 
+// A latitude/longitude box that contains the whole circle of radiusKm around a point.
+// Used to let the database skip far-away rows before the exact haversine check.
+struct BoundingBox {
+    double minLatitude;
+    double maxLatitude;
+    double minLongitude;
+    double maxLongitude;
+};
+
+inline BoundingBox boundingBoxAround(double latitude, double longitude, double radiusKm) {
+    constexpr double earthRadiusKm = 6371.0;  // the same radius haversineKm uses
+    constexpr double degreesToRadians = 3.14159265358979323846 / 180.0;
+    constexpr double kmPerDegreeLatitude = earthRadiusKm * degreesToRadians;  // about 111.19 km
+    constexpr double safetyMargin = 1.01;  // 1% larger, so rounding never cuts off a donor
+
+    const double latitudeDelta = radiusKm * safetyMargin / kmPerDegreeLatitude;
+    // A degree of longitude gets shorter towards the poles; keep the box valid near them.
+    const double cosine = std::max(0.01, std::cos(latitude * degreesToRadians));
+    const double longitudeDelta = std::min(180.0, radiusKm * safetyMargin / (kmPerDegreeLatitude * cosine));
+
+    return {latitude - latitudeDelta, latitude + latitudeDelta,
+            longitude - longitudeDelta, longitude + longitudeDelta};
+}
+
 #endif
