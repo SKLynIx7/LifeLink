@@ -1,7 +1,7 @@
-// Profile page: change name, blood group, area, mobile number (donors) and password.
+// Profile page: change name, blood group, location, mobile number (donors) and password.
 
 (() => {
-  const { api, h, showMessage, BLOOD_GROUPS, AREAS } = LifeLink;
+  const { api, h, showMessage, BLOOD_GROUPS } = LifeLink;
 
   const session = LifeLink.requireLogin();
   if (!session) {
@@ -12,26 +12,20 @@
   const PHONE_PATTERN = /^[6-9][0-9]{9}$/;
   const profileForm = document.getElementById("profile-form");
   const profileMessage = document.getElementById("profile-message");
-  const areaSelect = document.getElementById("area");
-  const locationNote = document.getElementById("location-note");
   const phoneField = document.getElementById("phone-field");
+  const locationNote = document.getElementById("location-note");
+  const LOCATION_HINT = locationNote.textContent;
 
   let me = null;
-  let savedLocation = null;    // the location already on the account, if it is not one of the listed areas
-  let currentLocation = null;  // set by "Use my current location"
+  const locationField = LocationPicker.attachField({
+    preview: document.getElementById("location-preview"),
+    button: document.getElementById("choose-location"),
+    select: document.getElementById("area"),
+    note: locationNote
+  });
 
   document.getElementById("blood-type").replaceChildren(
     ...BLOOD_GROUPS.map((group) => h("option", { value: group }, group)));
-
-  function fillAreas(selectedName) {
-    const options = AREAS.map((area, index) => h("option", { value: String(index) }, area.name));
-    if (savedLocation) {
-      options.unshift(h("option", { value: "saved" }, `${savedLocation.name} (saved)`));
-    }
-    areaSelect.replaceChildren(...options);
-    const index = AREAS.findIndex((area) => area.name === selectedName);
-    areaSelect.value = index >= 0 ? String(index) : (savedLocation ? "saved" : "0");
-  }
 
   async function load() {
     const result = await api("GET", "/api/me");
@@ -43,36 +37,12 @@
     document.getElementById("name").value = me.name;
     document.getElementById("email").value = me.email;
     document.getElementById("blood-type").value = me.blood_type;
-    if (!AREAS.some((area) => area.name === me.area)) {
-      // Keep a location that is not in the list (for example "Current location").
-      savedLocation = { name: me.area, latitude: me.latitude, longitude: me.longitude };
-    }
-    fillAreas(me.area);
+    locationField.value = me.location || { area: me.area, latitude: me.latitude, longitude: me.longitude };
     phoneField.hidden = !me.is_donor;
     if (me.is_donor) {
       document.getElementById("phone").value = me.donor_profile.phone;
     }
   }
-
-  areaSelect.addEventListener("change", () => {
-    currentLocation = null;
-    locationNote.textContent = "";
-  });
-
-  document.getElementById("use-location").addEventListener("click", () => {
-    if (!navigator.geolocation) {
-      locationNote.textContent = "Your browser cannot share its location. Please choose your area instead.";
-      return;
-    }
-    locationNote.textContent = "Getting your location…";
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        currentLocation = { name: "Current location", latitude: position.coords.latitude, longitude: position.coords.longitude };
-        locationNote.textContent = "Your current location will be saved.";
-      },
-      () => { locationNote.textContent = "Could not get your location. Please choose your area instead."; },
-      { timeout: 10000 });
-  });
 
   profileForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -88,16 +58,7 @@
       return;
     }
 
-    const body = { name, blood_type: document.getElementById("blood-type").value };
-    if (currentLocation) {
-      Object.assign(body, { area: currentLocation.name, latitude: currentLocation.latitude, longitude: currentLocation.longitude });
-    } else if (areaSelect.value === "saved") {
-      // Unchanged location that is not one of the listed areas: keep it as it is.
-      Object.assign(body, { area: savedLocation.name, latitude: savedLocation.latitude, longitude: savedLocation.longitude });
-    } else {
-      const area = AREAS[Number(areaSelect.value)];
-      Object.assign(body, { area: area.name, latitude: area.latitude, longitude: area.longitude });
-    }
+    const body = Object.assign({ name, blood_type: document.getElementById("blood-type").value }, locationField.value);
     if (me.is_donor) body.phone = phone;
 
     const button = profileForm.querySelector("button[type=submit]");
@@ -110,8 +71,7 @@
     }
     // Keep the name in the header in step.
     LifeLink.saveSession(Object.assign({}, LifeLink.getSession(), { name: result.data.name }));
-    currentLocation = null;
-    locationNote.textContent = "";
+    locationNote.textContent = LOCATION_HINT;
     await load();
     LifeLink.announceChange();
     showMessage(profileMessage, result.data.message, "success");
