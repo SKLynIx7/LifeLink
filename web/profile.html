@@ -26,16 +26,18 @@
           <input id="email" type="email" disabled>
         </label>
         <p class="hint">Your email is how you log in, so it cannot be changed here.</p>
-        <div class="two-col">
-          <label>Blood group
-            <select id="blood-type" required></select>
-          </label>
-          <label>Area in Dehradun
-            <select id="area" required></select>
-          </label>
+        <label>Blood group
+          <select id="blood-type" required></select>
+        </label>
+        <div class="location-field" role="group" aria-labelledby="location-label">
+          <span class="field-label" id="location-label">Your location</span>
+          <div id="location-preview" class="location-preview"></div>
+          <div class="location-actions">
+            <button type="button" id="choose-location" class="secondary">Change on map</button>
+            <select id="area" aria-label="Or pick your area in Dehradun"></select>
+          </div>
+          <p id="location-note" class="hint">Distances to hospitals are measured from here. Others never see your address.</p>
         </div>
-        <button type="button" id="use-location" class="secondary small-button">Use my current location instead</button>
-        <p id="location-note" class="hint"></p>
         <label id="phone-field" hidden>Mobile number
           <input id="phone" type="tel" inputmode="numeric" maxlength="10">
         </label>
@@ -67,6 +69,7 @@
   </main>
 
   <script src="/app.js"></script>
+  <script src="/location-picker.js"></script>
   <script src="/profile.js"></script>
 </body>
 </html>
